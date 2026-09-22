@@ -1,0 +1,396 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "随心说 Language Processing API",
+    "version": "2.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/polish": {
+      "post": {
+        "summary": "Polish Endpoint",
+        "operationId": "polish_endpoint_v1_polish_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-remaining-budget-ms",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 1,
+              "description": "可选：客户端发送时剩余预算；手机仍须执行从 FINAL 起算的总期限。",
+              "default": 10000,
+              "title": "X-Remaining-Budget-Ms"
+            },
+            "description": "可选：客户端发送时剩余预算；手机仍须执行从 FINAL 起算的总期限。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolishResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContextSentence": {
+        "properties": {
+          "segmentId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Segmentid"
+          },
+          "rawChinese": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Rawchinese"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segmentId",
+          "rawChinese"
+        ],
+        "title": "ContextSentence"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "segmentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segmentid"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
+      },
+      "FidelityIssue": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-[A-Z]{2}|-[0-9]{3})?$",
+            "title": "Language"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "AMBIGUITY",
+              "FIDELITY_CHECK_FAILED",
+              "UNAVAILABLE"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "language",
+          "code",
+          "message"
+        ],
+        "title": "FidelityIssue"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status",
+            "default": "ok"
+          },
+          "model_configured": {
+            "type": "boolean",
+            "title": "Model Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_configured"
+        ],
+        "title": "HealthResponse"
+      },
+      "PolishRequest": {
+        "properties": {
+          "segmentId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Segmentid"
+          },
+          "rawChinese": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Rawchinese"
+          },
+          "sessionId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Sessionid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "targetLanguages": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-[A-Z]{2}|-[0-9]{3})?$"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Targetlanguages"
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/ContextSentence"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Context"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segmentId",
+          "rawChinese",
+          "sessionId",
+          "revision"
+        ],
+        "title": "PolishRequest"
+      },
+      "PolishResponse": {
+        "properties": {
+          "polishedChinese": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polishedchinese"
+          },
+          "translations": {
+            "patternProperties": {
+              "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-[A-Z]{2}|-[0-9]{3})?$": {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              }
+            },
+            "type": "object",
+            "title": "Translations"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/FidelityIssue"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Issues"
+          },
+          "segmentId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Segmentid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "polishedChinese",
+          "translations",
+          "issues",
+          "segmentId",
+          "revision"
+        ],
+        "title": "PolishResponse"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

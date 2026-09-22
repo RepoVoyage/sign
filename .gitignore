@@ -1,0 +1,20 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+/tmp/
+/output/
+# Downloaded third-party data and generated galleries stay local.
+/datasets/chinese-sign-language-dictionary/
+/datasets/csl-clinic-sample/
+/datasets/demo_help_vocab/images/
+/datasets/demo_help_vocab/*.html
+/datasets/demo_help_vocab/manifest.json
+/datasets/demo_help_vocab/词汇图文索引.md
+*.pem
+*.key

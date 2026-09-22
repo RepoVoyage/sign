@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew Insta360 IP TLS certificate
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/insta360-certbot/bin/certbot renew --quiet --cert-name insta360-agent --deploy-hook "/usr/sbin/nginx -s reload"
