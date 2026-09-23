@@ -110,6 +110,7 @@ class StreamRecognizer:
         ranked = sorted(best.items(), key=lambda kv: kv[1][0])
         pred, (dist, tvid) = ranked[0][0], ranked[0][1]
         margin = ranked[1][1][0] - dist
+        candidates = [{'label': c, 'score': round(float(np.exp(-3 * d)), 3)} for c, (d, _) in ranked[:3]]
         tf, tv, tt, _ = self.bank[tvid]
         path, _ = align(tf, tv, fs, vs)
         mapped = np.array([np.median(seg_times[path[path[:, 0] == i, 1]]) for i in range(len(tt))])
@@ -119,11 +120,42 @@ class StreamRecognizer:
             e = round(float(np.interp(w['end'], tt, mapped)), 2)
             if e - s >= 0.08:
                 stream.append({'word': w['label'], 'start': s, 'end': e})
-        ev = {'sentence_candidate': pred, 'confidence_margin': round(margin, 4),
+        sentence, conf = sentence_confidence(pred, candidates, stream)
+        ev = {'sentence_candidate': sentence, 'confidence_margin': round(margin, 4),
+              'sentence_confidence': conf, 'candidates': candidates,
               'low_confidence': margin < MARGIN_THR, 'needs_repeat': margin < MARGIN_THR,
               'stream': stream, 'seg_start': round(a, 2), 'seg_end': round(b, 2)}
         self.events.append(ev)
         return ev
+
+
+def sentence_confidence(pred, candidates, stream):
+    """P6 契约§3：服务侧组合 LLM 挑词成句并给句子置信度；LLM 不可用回落 CV top1+margin 校准。"""
+    import os, urllib.request
+    fallback_conf = round(min(0.99, 0.5 + 2 * (candidates[0]['score'] - (candidates[1]['score'] if len(candidates) > 1 else 0))), 2)
+    try:
+        base = os.environ['ANTHROPIC_BASE_URL'].rstrip('/')
+        key = os.environ['ANTHROPIC_AUTH_TOKEN']
+        words = ' '.join(w['word'] for w in stream) or '(无)'
+        prompt = (f'手语识别词流（按时间序）：{words}\nCV 整句候选：'
+                  + '、'.join(f"{c['label']}({c['score']})" for c in candidates)
+                  + '\n请选出最可能的一句并给置信度(0-1)，只输出：句名|置信度')
+        body = json.dumps({'model': 'qwen3.8-max', 'max_tokens': 120,
+                           'messages': [{'role': 'user', 'content': prompt}]}).encode('utf-8')
+        req = urllib.request.Request(base + '/v1/messages', data=body, headers={
+            'content-type': 'application/json', 'x-api-key': key,
+            'authorization': f'Bearer {key}', 'anthropic-version': '2023-06-01'})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            out = json.loads(resp.read().decode('utf-8'))
+        text = ''.join(b.get('text', '') for b in out.get('content', []) if b.get('type') == 'text').strip()
+        name, _, cs = text.rpartition('|')
+        name = name.strip() or text.strip()
+        conf = float(cs) if cs else fallback_conf
+        known = [c['label'] for c in candidates]
+        sentence = next((k for k in known if k in name or name in k), pred)
+        return sentence, round(min(0.99, max(0.05, conf)), 2)
+    except Exception:
+        return pred, fallback_conf
 
 
 SESSIONS = {}
@@ -201,13 +233,14 @@ def load_cfg(long_edge, device):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=8788)
     ap.add_argument('--long-edge', type=int, default=1080)
     ap.add_argument('--device', default='cuda')
     args = ap.parse_args()
     load_cfg(args.long_edge, args.device)
     print(f'stream service on :{args.port} long_edge={args.long_edge} device={args.device}', flush=True)
-    ThreadingHTTPServer(('0.0.0.0', args.port), Handler).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
 
 if __name__ == '__main__':
