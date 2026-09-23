@@ -101,7 +101,7 @@ cv/.venv/bin/python cv/server.py
 curl -H 'Content-Type: video/mp4' --data-binary @cv/data/videos/session04/你1.MP4 http://127.0.0.1:8765/v1/recognize
 ```
 
-服务器部署采用 `cv/deploy/insta360-cv.service`，通过 Nginx 暴露 HTTPS 路径；服务器使用 `cv/requirements-server.txt` 和导出的 NumPy 权重，不安装 PyTorch。`CV_SERVICE_TOKEN` 仅保存在服务器 `.env`，不入库。该服务是测试原型，未实现连续识别、手势边界检测、非目标动作拒识和可靠置信度校准。
+服务器已按 `cv/deploy/insta360-cv.service` 部署，通过 `https://101.37.234.129/v1/recognize` 提供 HTTPS 测试接口；使用 `cv/requirements-server.txt` 和导出的 NumPy 权重，不安装 PyTorch。`CV_SERVICE_TOKEN` 仅保存在服务器 `/opt/insta360-cv/.env`，不入库。完整请求/响应契约见 [完整 API 文档](../agent/docs/API.md)，App 步骤见 [交接文档](../agent/docs/交接文档.md)。该服务是测试原型，未实现连续识别、手势边界检测、非目标动作拒识和可靠置信度校准。
 
 ## 本机验证结果
 

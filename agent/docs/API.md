@@ -1,4 +1,60 @@
-# 随心说 Python 云端语言接口（实现版 v2.1）
+# 随心说完整 HTTP API（演示版 v2.1）
+
+公网基础地址：`https://101.37.234.129`。所有请求均使用系统信任的 HTTPS 证书；手机无需直接连接服务器的 8000 或 8765 端口。CV 和 Agent 是两个独立服务，通过同一个 Nginx 地址暴露。
+
+| 方法与路径 | 服务 | 输入 | 令牌 | 作用 |
+|---|---|---|---|---|
+| `GET /cv/health` | CV | 无 | 无 | 检查 CV 模型是否加载 |
+| `POST /v1/recognize` | CV | 一个孤立词的 MP4 | `CV_SERVICE_TOKEN` | 返回最多三个词候选 |
+| `GET /health` | Agent | 无 | 无 | 检查 Agent 配置 |
+| `POST /v1/compose-signs` | Agent | 一句内有序词候选 | `SERVICE_API_KEY` | 从五句语料中选句 |
+| `POST /v1/polish` | Agent | 已冻结中文原文 | `SERVICE_API_KEY` | 旧有整理与翻译流程 |
+| `GET /openapi.json` | Agent | 无 | 无 | Agent 两个 POST 接口的机器可读契约；CV 接口见本文 |
+
+### CV：POST /v1/recognize
+
+请求体直接放 MP4 字节，**不是** JSON 或 multipart。每次只提交一个已切好的词片段，最大 32 MiB；请求头必须有 `Content-Type: video/mp4` 和 `Authorization: Bearer <CV_SERVICE_TOKEN>`。CV 令牌与 Agent 的 `SERVICE_API_KEY` 不同。
+
+```http
+POST /v1/recognize HTTP/1.1
+Host: 101.37.234.129
+Authorization: Bearer <CV_SERVICE_TOKEN>
+Content-Type: video/mp4
+Content-Length: <视频字节数>
+
+<MP4 字节>
+```
+
+HTTP 200 响应示例：
+
+```json
+{
+  "frames": 64,
+  "any_hand_fraction": 0.515625,
+  "needsConfirmation": true,
+  "status": "OK",
+  "candidates": [
+    {"label": "你", "score": 0.9998},
+    {"label": "一定", "score": 0.0002},
+    {"label": "自己", "score": 0.000001}
+  ]
+}
+```
+
+`frames` 是解码帧数，`any_hand_fraction` 是至少检测到一只手的帧比例，范围 0–1，**不是识别准确率**。`score` 是未校准 softmax，不是可靠概率。`candidates` 按排名排列，最多三个。`needsConfirmation` 恒为 true。`status` 为 `OK`、`TOO_SHORT`（少于 12 帧）或 `INSUFFICIENT_HAND_DETECTION`（检测到手的帧比例低于 0.10）；后两者的 `candidates=[]`，App 不应送入句子补全。
+
+| HTTP | 响应 JSON | 含义 |
+|---|---|---|
+| 200 | 上述 CV 结果 | 识别完成或片段被质量门槛拒绝 |
+| 401 | `{"error":"UNAUTHORIZED"}` | CV Bearer 令牌缺失或错误 |
+| 404 | `{"error":"NOT_FOUND"}` | 路径不对 |
+| 411 | `{"error":"CONTENT_LENGTH_REQUIRED"}` | 缺少有效 Content-Length |
+| 413 | `{"error":"VIDEO_TOO_LARGE"}` 或网关响应 | 视频超过 32 MiB |
+| 415 | `{"error":"EXPECTED_VIDEO_MP4"}` | Content-Type 不是 video/mp4 |
+| 422 | `{"error":"INVALID_VIDEO"}` | 视频不完整或无法解码 |
+| 503 | `{"error":"CV_INFERENCE_FAILED"}` | CV 推理故障 |
+
+网关限流时还可能返回 429，超时/上游故障可能返回非 JSON 的 502/504；App 应先看 HTTP 状态与 Content-Type。CV 服务不回传 `sessionId`、`segmentId` 或 `revision`，App 必须用自己的请求快照关联视频片段并丢弃过期结果。此服务一次只处理一个请求，当前没有自动切词、开放集拒识或语句识别。
 
 ## 0. 五句手语演示接口：POST /v1/compose-signs
 
@@ -29,6 +85,8 @@
 
 `sessionId` 为 UUID；`segmentId` 非空、1–128 字符；`revision` 为 0–2147483647 的整数。`gestures` 为按时间排列的 1–12 项；每项 `candidates` 为按 CV 排名排列的 1–3 项，词标签不能重复，必须属于当前 19 类。`score` 可选，若提供须在 0–1 内。未约定字段和不合法数据返回 422。新段使用新 `segmentId`；同段修改则增加 `revision`。
 
+当前允许的 19 个 CV 标签：`一定`、`你`、`只`、`可以`、`回`、`大家`、`好`、`家`、`年`、`很久不`、`我`、`我们`、`新`、`是`、`照顾`、`祝贺`、`自己`、`要`、`见`。例如“想”不是合法 CV 标签，不能作为 `candidates[].label` 直接提交。
+
 成功响应示例：
 
 ```json
@@ -42,9 +100,9 @@
 }
 ```
 
-`status` 为 `CANDIDATE`、`AMBIGUOUS` 或 `INSUFFICIENT_EVIDENCE`。后两者的 `sentence` 为 null；`alternatives` 是按至少两个有序词候选及区分词筛出的可选句，不保证正确。证据不足时不调用 LLM。LLM 只能从 `alternatives` 选择或返回 null；越界输出返回 502 `MODEL_INVALID_RESPONSE`。所有结果 `needsConfirmation=true`，App 应展示给用户确认，不能直接自动播报。当前模型对胸前视角的同场次抽查为 13/19，且缺少非目标动作拒识；五句组合效果尚未独立验证。
+`status` 为 `CANDIDATE`、`AMBIGUOUS` 或 `INSUFFICIENT_EVIDENCE`。后两者的 `sentence` 为 null；`alternatives` 是按至少两个有序词候选、区分词和候选排名权重筛出的可选句，不保证正确。两个都排第三的弱候选不会单独构成证据。证据不足时不调用 LLM。LLM 只能从 `alternatives` 选择或返回 null；越界输出返回 502 `MODEL_INVALID_RESPONSE`。所有结果 `needsConfirmation=true`，App 应展示给用户确认，不能直接自动播报。当前模型对胸前视角的同场次抽查为 13/19，且缺少非目标动作拒识；五句组合效果尚未独立验证。
 
-错误体结构、鉴权、超时和模型错误码与 `/v1/polish` 相同。接口本身不保存会话；App 负责视频分段、候选排序、代次失效、去重、结果确认和 TTS。此版本先完成本地实现，公网服务是否已更新须以线上 OpenAPI 实查为准。
+错误体结构、鉴权、超时和模型错误码与 `/v1/polish` 相同。接口本身不保存会话；App 负责视频分段、候选排序、代次失效、去重、结果确认和 TTS。公网服务已部署 Agent 2.1.0；可通过线上 OpenAPI 核对实际版本。
 
 以用户提供的 `API_new.md` §5–6 为依据。本文件补齐 Python HTTP 的可执行约定，不替代全系统契约；原始 `API_new.md` 保持不变。该文档引用的 `ARCHITECTURE.md` 当前未在仓库中找到，若之后提供，需进一步核对冲突。
 
@@ -253,7 +311,7 @@ LLM_TIMEOUT_SECONDS=10
 SERVICE_API_KEY=
 ```
 
-LLM_BASE_URL 为 API 前缀，程序追加 `/chat/completions`。使用 Bearer Key，提交 model、stream=false、system/user messages；读取 choices[0].message.content 的严格 JSON。模型输出必须为 polishedChinese/translations/issues，不接受 Markdown 或旧版 sentence/status。不强制供应商 JSON mode，无自动本地降级。
+LLM_BASE_URL 为 API 前缀，程序追加 `/chat/completions`。使用 Bearer Key，提交 model、stream=false、system/user messages；读取 choices[0].message.content 的严格 JSON。`/v1/polish` 的模型输出必须为 polishedChinese/translations/issues；`/v1/compose-signs` 的模型输出只允许 sentence（五句之一或 null）。均不接受 Markdown。不强制供应商 JSON mode，无自动本地降级。
 
 `GET /health` 仍返回：
 
@@ -275,6 +333,6 @@ curl -sS http://127.0.0.1:8000/v1/polish \
 
 示例响应仅说明数据格式，实际文本由模型生成。在线调试 `/docs`，机器定义 `/openapi.json`，仓库快照 `docs/openapi.json`。测试命令 `.venv/bin/python -m pytest -q`。
 
-实测范围：57 项自动化测试、服务器真实模型调用、公网 HTTPS 和 Bearer 鉴权。手机/CV 集成、云端网络绑定、从 FINAL 起算的完整期限和整体翻译质量仍需验收。
+实测范围：74 项自动化测试、服务器真实模型调用、公网 HTTPS 和 Bearer 鉴权；选定三个真实视频的 CV→Agent 接口链路已验证。手机真机接入、连续视频切词/切句、跨场次准确率、从 FINAL 起算的完整期限和整体翻译质量仍需验收。
 
-线上地址与运维操作见 DEPLOYMENT.md。Nginx 按来源 IP 限流 30 次/分钟、突发 5 次、同时最多 3 个请求，超限返回 429；超过 128 KiB 返回 413。这些网关错误可能是非 JSON。
+线上地址与运维操作见 DEPLOYMENT.md。Agent 两个 POST 路由按来源 IP 限流 30 次/分钟、突发 5 次、同时最多 3 个请求，默认超过 128 KiB 返回 413。CV 路由另有 12 次/分钟和 32 MiB 的上限。这些网关错误可能是非 JSON。

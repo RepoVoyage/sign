@@ -35,8 +35,9 @@ def matched_anchors(anchors, gestures):
     position = 0
     for anchor in anchors:
         for index in range(position, len(gestures)):
-            if anchor in {candidate.label for candidate in gestures[index].candidates}:
-                matched.append(anchor)
+            labels = [candidate.label for candidate in gestures[index].candidates]
+            if anchor in labels:
+                matched.append((anchor, labels.index(anchor)))
                 position = index + 1
                 break
     return matched
@@ -46,7 +47,9 @@ def plausible_sentences(body: SignComposeRequest):
     plausible = []
     for sentence, anchors, distinctive in PHRASES:
         matched = matched_anchors(anchors, body.gestures)
-        if len(matched) >= 2 and distinctive.intersection(matched):
+        labels = {label for label, _ in matched}
+        rank_weight = sum((1.0, 0.5, 0.25)[rank] for _, rank in matched)
+        if len(matched) >= 2 and rank_weight >= 1.0 and distinctive.intersection(labels):
             plausible.append(sentence)
     return plausible
 

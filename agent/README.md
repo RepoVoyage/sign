@@ -7,10 +7,12 @@
 - 调试文档：https://101.37.234.129/docs
 - 健康检查：https://101.37.234.129/health
 - 接口：https://101.37.234.129/v1/polish
+- 五句补全：https://101.37.234.129/v1/compose-signs
+- CV 视频识别：https://101.37.234.129/v1/recognize
 
 接口要求 `Authorization: Bearer <SERVICE_API_KEY>`。令牌已写入本机 `agent/.env`，与服务器一致，不是 `LLM_API_KEY`。Apifox 选择 Bearer Token 并粘贴 SERVICE_API_KEY 的值；Swagger 点击 Authorize 后输入令牌。
 
-详细字段见 [接口文档](docs/API.md)，部署和维护见 [部署说明](docs/DEPLOYMENT.md)。当前公网部署可能仍为旧版本；调用新接口前需先更新服务器，并检查公网 OpenAPI 是否包含 `/v1/compose-signs`。
+详细字段见 [完整接口文档](docs/API.md)，App 使用步骤见 [交接文档](docs/交接文档.md)，部署和维护见 [部署说明](docs/DEPLOYMENT.md)。Agent 2.1.0 与 CV 测试服务已部署；公网 OpenAPI 包含 `/v1/compose-signs`，CV 接口按完整接口文档对接。
 
 ## 本地运行
 
@@ -60,4 +62,4 @@ requirements-lock.txt  完整开发/测试依赖
 .venv/bin/python -m pytest -q
 ```
 
-本地 57 项测试通过；测试依赖有两条既有弃用提示。已验证服务器真实模型调用。代码的保真检查是启发式，不证明跨语言语义完全正确；手机仍负责代次、设置、截止时间、队列及 TTS 控制。
+本地 74 项测试通过；测试依赖有两条既有弃用提示。已验证服务器真实模型调用。代码的保真检查是启发式，不证明跨语言语义完全正确；手机仍负责代次、设置、截止时间、队列及 TTS 控制。

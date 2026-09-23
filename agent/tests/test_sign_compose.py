@@ -64,6 +64,17 @@ def test_ranked_candidates_and_ambiguous_result():
         assert '你一定可以' in result['alternatives']
 
 
+def test_two_third_rank_candidates_do_not_create_spurious_sentence():
+    request = {'gestures': [
+        {'candidates': [{'label': '我'}, {'label': '照顾'}, {'label': '新'}]},
+        {'candidates': [{'label': '回'}, {'label': '你'}, {'label': '好'}]},
+        {'candidates': [{'label': '家'}, {'label': '见'}, {'label': '很久不'}]},
+    ], **BASE}
+    with client_for(lambda r: upstream('我想回家')) as client:
+        result = client.post(PATH, json=request).json()
+        assert result['alternatives'] == ['我想回家']
+
+
 def test_insufficient_evidence_skips_model():
     def forbidden(request):
         raise AssertionError('no model call expected')
