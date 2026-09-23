@@ -1,5 +1,7 @@
 package com.repovoyage.sign.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +43,7 @@ import com.repovoyage.sign.language.OutputStatus
 import com.repovoyage.sign.pipeline.PipelinePhase
 import com.repovoyage.sign.pipeline.SubtitleLine
 import com.repovoyage.sign.sentence.LangCode
+import java.util.Locale
 
 /**
  * 主界面内容（§2.7）：会话状态卡 → 翻译控制 → 字幕流（主体）→ 训练采集入口。
@@ -57,6 +61,12 @@ fun MainScreen(
     val statsText by vm.statsText.collectAsStateWithLifecycle()
     val scanStatus by vm.scanStatus.collectAsStateWithLifecycle()
     val devices by vm.devices.collectAsStateWithLifecycle()
+    val selectedModelId by vm.selectedModelId.collectAsStateWithLifecycle()
+    val localVideoTest by vm.localVideoTest.collectAsStateWithLifecycle()
+    var cvToken by remember { mutableStateOf("") }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.recognizeLocalVideo(uri, cvToken)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -151,6 +161,41 @@ fun MainScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+        }
+
+        if (selectedModelId == "model-b") {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("第一人称 · 本地视频测试", style = MaterialTheme.typography.titleMedium)
+                    Text("选择一个完整手语词的 MP4；仅显示候选，不进入字幕或自动播报。",
+                        style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = cvToken,
+                        onValueChange = { cvToken = it },
+                        label = { Text("CV 服务令牌") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { videoPicker.launch(arrayOf("video/mp4")) },
+                        enabled = cvToken.isNotBlank() && !localVideoTest.loading && sessionState is SessionState.Idle,
+                    ) { Text("选择 MP4 并识别") }
+                    if (sessionState !is SessionState.Idle) {
+                        Text("请先断开相机，再测试手机里的 MP4。", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (localVideoTest.message.isNotEmpty()) Text(localVideoTest.message)
+                    localVideoTest.result?.let { result ->
+                        Text("状态：${result.status} · ${result.frames} 帧 · 检测到手：${String.format(Locale.ROOT, "%.1f", result.anyHandFraction * 100)}%")
+                        result.candidates.forEachIndexed { index, candidate ->
+                            Text("${index + 1}. ${candidate.label}  ${String.format(Locale.ROOT, "%.4f", candidate.score)}")
+                        }
+                        if (result.candidates.isNotEmpty()) {
+                            Text("分数未校准，识别结果需要人工确认。", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
         }
 

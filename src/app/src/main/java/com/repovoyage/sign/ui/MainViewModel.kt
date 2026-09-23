@@ -1,6 +1,7 @@
 package com.repovoyage.sign.ui
 
 import android.app.Application
+import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,13 +18,19 @@ import com.repovoyage.sign.camera.SessionState
 import com.repovoyage.sign.capture.CaptureEntryImpl
 import com.repovoyage.sign.pipeline.SubtitleState
 import com.repovoyage.sign.recognition.RecognitionSourceImpl
+import com.repovoyage.sign.recognition.CvResult
+import com.repovoyage.sign.recognition.LocalVideoCvClient
 import com.repovoyage.sign.sentence.LangCode
 import com.repovoyage.sign.service.CameraBridgeForegroundService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -43,6 +50,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val recognitionAvailable: Boolean = RecognitionSourceImpl.isAvailable
 
     val pipelineState: StateFlow<SubtitleState> = signApp.pipeline.state
+
+    val selectedModelId: StateFlow<String?> = signApp.settings.selectedModelId
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val localVideoClient = LocalVideoCvClient()
+    private val _localVideoTest = MutableStateFlow(LocalVideoTestState())
+    val localVideoTest: StateFlow<LocalVideoTestState> = _localVideoTest.asStateFlow()
+
+    /** One existing MP4 for model-b only; never feeds the production sentence pipeline. */
+    fun recognizeLocalVideo(uri: Uri, cvToken: String) {
+        if (_localVideoTest.value.loading) return
+        viewModelScope.launch {
+            if (signApp.settings.selectedModelId.first() != "model-b") {
+                _localVideoTest.value = LocalVideoTestState(message = "请先在设置中选择第一人称模型 B")
+                return@launch
+            }
+            if (_sessionState.value !is SessionState.Idle) {
+                _localVideoTest.value = LocalVideoTestState(message = "本地视频测试前请先断开相机")
+                return@launch
+            }
+            _localVideoTest.value = LocalVideoTestState(loading = true, message = "正在上传并识别…")
+            try {
+                val result = localVideoClient.recognize(getApplication<Application>().contentResolver, uri, cvToken)
+                _localVideoTest.value = LocalVideoTestState(
+                    result = result,
+                    message = if (result.status == "OK") "识别完成，请核对候选词" else "视频质量不足：${result.status}",
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _localVideoTest.value = LocalVideoTestState(message = error.message ?: "识别请求失败")
+            }
+        }
+    }
 
     // ---------------------------------------------------------------- 会话
 
@@ -227,3 +268,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         const val SCAN_DURATION_MS = 10_000L
     }
 }
+
+data class LocalVideoTestState(
+    val loading: Boolean = false,
+    val message: String = "",
+    val result: CvResult? = null,
+)
