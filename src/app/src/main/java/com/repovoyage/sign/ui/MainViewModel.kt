@@ -20,6 +20,8 @@ import com.repovoyage.sign.pipeline.SubtitleState
 import com.repovoyage.sign.recognition.RecognitionSourceImpl
 import com.repovoyage.sign.recognition.CvResult
 import com.repovoyage.sign.recognition.LocalVideoCvClient
+import com.repovoyage.sign.recognition.ComposeResult
+import com.repovoyage.sign.recognition.LocalVideoComposeClient
 import com.repovoyage.sign.sentence.LangCode
 import com.repovoyage.sign.service.CameraBridgeForegroundService
 import kotlinx.coroutines.Job
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * 主界面 VM（MVVM，ARCHITECTURE §3.2）：BLE 扫描/连接（P2 面板逻辑迁入）、
@@ -55,34 +58,87 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val localVideoClient = LocalVideoCvClient()
+    private val localComposeClient = LocalVideoComposeClient()
     private val _localVideoTest = MutableStateFlow(LocalVideoTestState())
     val localVideoTest: StateFlow<LocalVideoTestState> = _localVideoTest.asStateFlow()
+    private var localTestGeneration = 0L
+    private var localTestSessionId = UUID.randomUUID().toString()
+    private var localTestSegmentId = "local-${UUID.randomUUID()}"
+    private var localTestRevision = 0
 
-    /** One existing MP4 for model-b only; never feeds the production sentence pipeline. */
+    /** One existing MP4 per word, in user-selected order; never feeds the production pipeline. */
     fun recognizeLocalVideo(uri: Uri, cvToken: String) {
-        if (_localVideoTest.value.loading) return
+        if (_localVideoTest.value.loading || _localVideoTest.value.gestures.size >= 12) return
         viewModelScope.launch {
             if (signApp.settings.selectedModelId.first() != "model-b") {
-                _localVideoTest.value = LocalVideoTestState(message = "请先在设置中选择第一人称模型 B")
+                _localVideoTest.value = _localVideoTest.value.copy(message = "请先在设置中选择第一人称模型 B")
                 return@launch
             }
             if (_sessionState.value !is SessionState.Idle) {
-                _localVideoTest.value = LocalVideoTestState(message = "本地视频测试前请先断开相机")
+                _localVideoTest.value = _localVideoTest.value.copy(message = "本地视频测试前请先断开相机")
                 return@launch
             }
-            _localVideoTest.value = LocalVideoTestState(loading = true, message = "正在上传并识别…")
+            val generation = localTestGeneration
+            _localVideoTest.value = _localVideoTest.value.copy(loading = true, message = "正在上传并识别…", lastVideoResult = null)
             try {
                 val result = localVideoClient.recognize(getApplication<Application>().contentResolver, uri, cvToken)
-                _localVideoTest.value = LocalVideoTestState(
-                    result = result,
-                    message = if (result.status == "OK") "识别完成，请核对候选词" else "视频质量不足：${result.status}",
+                if (generation != localTestGeneration) return@launch
+                val accepted = result.status == "OK" && result.candidates.isNotEmpty()
+                val current = _localVideoTest.value
+                _localVideoTest.value = current.copy(
+                    loading = false,
+                    gestures = if (accepted) current.gestures + result else current.gestures,
+                    lastVideoResult = result,
+                    composeResult = null,
+                    message = if (accepted) "第 ${current.gestures.size + 1} 个词已加入；请核对候选" else "视频未加入：${result.status}",
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _localVideoTest.value = LocalVideoTestState(message = error.message ?: "识别请求失败")
+                if (generation == localTestGeneration) {
+                    _localVideoTest.value = _localVideoTest.value.copy(loading = false, message = error.message ?: "识别请求失败")
+                }
             }
         }
+    }
+
+    /** Submit the collected top-three candidate groups as one ordered sentence. */
+    fun composeLocalVideos(agentToken: String) {
+        val state = _localVideoTest.value
+        if (state.loading || state.gestures.isEmpty() || _sessionState.value !is SessionState.Idle) return
+        viewModelScope.launch {
+            if (signApp.settings.selectedModelId.first() != "model-b") return@launch
+            val generation = localTestGeneration
+            val gestures = state.gestures.toList()
+            val revision = ++localTestRevision
+            val segmentId = localTestSegmentId
+            _localVideoTest.value = _localVideoTest.value.copy(loading = true, message = "正在补全句子…", composeResult = null)
+            try {
+                val result = localComposeClient.compose(localTestSessionId, segmentId, revision, gestures, agentToken)
+                if (generation != localTestGeneration) return@launch
+                if (result.segmentId != segmentId || result.revision != revision) {
+                    throw IllegalStateException("Agent 返回的段 ID 或修订号不匹配")
+                }
+                _localVideoTest.value = _localVideoTest.value.copy(
+                    loading = false, composeResult = result,
+                    message = if (result.sentence != null) "补全完成，请人工确认" else "未能确定句子：${result.status}",
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (generation == localTestGeneration) {
+                    _localVideoTest.value = _localVideoTest.value.copy(loading = false, message = error.message ?: "补全请求失败")
+                }
+            }
+        }
+    }
+
+    fun clearLocalVideoTest() {
+        localTestGeneration++
+        localTestSessionId = UUID.randomUUID().toString()
+        localTestSegmentId = "local-${UUID.randomUUID()}"
+        localTestRevision = 0
+        _localVideoTest.value = LocalVideoTestState()
     }
 
     // ---------------------------------------------------------------- 会话
@@ -272,5 +328,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 data class LocalVideoTestState(
     val loading: Boolean = false,
     val message: String = "",
-    val result: CvResult? = null,
+    val gestures: List<CvResult> = emptyList(),
+    val lastVideoResult: CvResult? = null,
+    val composeResult: ComposeResult? = null,
 )

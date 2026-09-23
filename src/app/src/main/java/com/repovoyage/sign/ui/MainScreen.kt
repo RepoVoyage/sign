@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +67,7 @@ fun MainScreen(
     val selectedModelId by vm.selectedModelId.collectAsStateWithLifecycle()
     val localVideoTest by vm.localVideoTest.collectAsStateWithLifecycle()
     var cvToken by remember { mutableStateOf("") }
+    var agentToken by remember { mutableStateOf("") }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.recognizeLocalVideo(uri, cvToken)
     }
@@ -165,10 +169,13 @@ fun MainScreen(
         }
 
         if (selectedModelId == "model-b") {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp), shape = RoundedCornerShape(16.dp)) {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text("第一人称 · 本地视频测试", style = MaterialTheme.typography.titleMedium)
-                    Text("选择一个完整手语词的 MP4；仅显示候选，不进入字幕或自动播报。",
+                    Text("按句内顺序逐个选择单词 MP4，再提交五句补全；不会自动播报。",
                         style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
                         value = cvToken,
@@ -178,22 +185,48 @@ fun MainScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    OutlinedTextField(
+                        value = agentToken,
+                        onValueChange = { agentToken = it },
+                        label = { Text("Agent 服务令牌（补句时使用）") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Button(
                         onClick = { videoPicker.launch(arrayOf("video/mp4")) },
-                        enabled = cvToken.isNotBlank() && !localVideoTest.loading && sessionState is SessionState.Idle,
-                    ) { Text("选择 MP4 并识别") }
+                        enabled = cvToken.isNotBlank() && !localVideoTest.loading &&
+                            localVideoTest.gestures.size < 12 && sessionState is SessionState.Idle,
+                    ) { Text("选择并识别下一个词") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { vm.composeLocalVideos(agentToken) },
+                            enabled = agentToken.isNotBlank() && localVideoTest.gestures.isNotEmpty() &&
+                                !localVideoTest.loading && sessionState is SessionState.Idle,
+                        ) { Text("完成本句并补全") }
+                        OutlinedButton(onClick = vm::clearLocalVideoTest) { Text("清空重来") }
+                    }
                     if (sessionState !is SessionState.Idle) {
                         Text("请先断开相机，再测试手机里的 MP4。", style = MaterialTheme.typography.bodySmall)
                     }
                     if (localVideoTest.message.isNotEmpty()) Text(localVideoTest.message)
-                    localVideoTest.result?.let { result ->
-                        Text("状态：${result.status} · ${result.frames} 帧 · 检测到手：${String.format(Locale.ROOT, "%.1f", result.anyHandFraction * 100)}%")
+                    localVideoTest.gestures.forEachIndexed { gestureIndex, result ->
+                        Text("第 ${gestureIndex + 1} 个词：${result.status} · ${result.frames} 帧 · 检测到手：${String.format(Locale.ROOT, "%.1f", result.anyHandFraction * 100)}% · 需确认：${if (result.needsConfirmation) "是" else "否"}")
                         result.candidates.forEachIndexed { index, candidate ->
                             Text("${index + 1}. ${candidate.label}  ${String.format(Locale.ROOT, "%.4f", candidate.score)}")
                         }
-                        if (result.candidates.isNotEmpty()) {
-                            Text("分数未校准，识别结果需要人工确认。", style = MaterialTheme.typography.bodySmall)
-                        }
+                    }
+                    localVideoTest.lastVideoResult?.takeIf { it.status != "OK" }?.let { result ->
+                        Text("未加入的片段：${result.status} · ${result.frames} 帧 · 检测到手：${String.format(Locale.ROOT, "%.1f", result.anyHandFraction * 100)}%")
+                    }
+                    localVideoTest.composeResult?.let { result ->
+                        Text("补句状态：${result.status} · 段：${result.segmentId} · 修订：${result.revision}")
+                        Text("句子：${result.sentence ?: "无法确定"}")
+                        Text("备选：${result.alternatives.ifEmpty { listOf("无") }.joinToString("、")}")
+                        Text("需要确认：${if (result.needsConfirmation) "是" else "否"}")
+                    }
+                    if (localVideoTest.gestures.isNotEmpty()) {
+                        Text("CV 分数未经校准；补全结果须由用户确认。", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
