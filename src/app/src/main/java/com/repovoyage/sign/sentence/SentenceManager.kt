@@ -65,7 +65,9 @@ class SentenceManager(
     }
 
     /** 冻结段（收尾窗口期满或用户确认）：非活跃段/未知段返回空（迟到收尾丢弃） */
-    fun finalize(segmentId: String, startPtsUs: Long, endPtsUs: Long): List<SentenceEvent> {
+    fun finalize(
+        segmentId: String, startPtsUs: Long, endPtsUs: Long, userConfirmed: Boolean = false,
+    ): List<SentenceEvent> {
         val segment = segments[segmentId] ?: return emptyList()
         if (!segment.state.isLive) return emptyList()
         segment.state = SegmentState.FINAL
@@ -81,7 +83,7 @@ class SentenceManager(
                     endPtsUs = endPtsUs,
                     rawChinese = segment.draftText,
                     confidence = segment.confidence,
-                    userConfirmed = false,   // 自动确认；用户核对是上层显式路径
+                    userConfirmed = userConfirmed,
                 ),
             ),
         )
@@ -91,6 +93,14 @@ class SentenceManager(
     fun discard(segmentId: String): List<SentenceEvent> {
         val segment = segments[segmentId] ?: return emptyList()
         if (segment.state != SegmentState.NEEDS_CONFIRMATION) return emptyList()
+        segment.state = SegmentState.DISCARDED
+        return listOf(SentenceEvent.Discarded(segmentId))
+    }
+
+    /** 识别源发现缺失切片时，撤下该段草稿，防止旧词残留在字幕中。 */
+    fun discardIncomplete(segmentId: String): List<SentenceEvent> {
+        val segment = segments[segmentId] ?: return emptyList()
+        if (!segment.state.isLive) return emptyList()
         segment.state = SegmentState.DISCARDED
         return listOf(SentenceEvent.Discarded(segmentId))
     }

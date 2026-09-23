@@ -269,6 +269,25 @@ class TranslationPipelineTest {
     }
 
     @Test
+    fun `Agent 待核对句确认后才进入最终字幕；缺词草稿可撤下`() = runBlocking {
+        val pipeline = newPipeline(finalizeDelayMs = 20)
+        pipeline.start("s-test")
+        source.emit(update("我想回家", BoundaryReliability.UNCERTAIN))
+        waitUntil { pipeline.state.value.pendingConfirm.any { it.segmentId == "seg-1" } }
+        assertTrue(pipeline.state.value.lines.isEmpty())
+        pipeline.confirmPending("seg-1")
+        waitUntil { pipeline.state.value.lines.any { it.segmentId == "seg-1" } }
+        assertTrue(processor.processed.any { it.segmentId == "seg-1" && it.userConfirmed })
+        assertTrue(pipeline.state.value.pendingConfirm.isEmpty())
+
+        source.emit(RecognitionUpdate(sequenceEpoch = 1, segmentId = "seg-2", draftText = "我 · 回"))
+        waitUntil { pipeline.state.value.draft?.segmentId == "seg-2" }
+        source.emit(RecognitionUpdate(sequenceEpoch = 1, segmentId = "seg-2", draftText = "", discarded = true))
+        waitUntil { pipeline.state.value.draft == null }
+        scope.cancel()
+    }
+
+    @Test
     fun `纠错落库 USER 而原样确认保留模型来源`() = runBlocking {
         processor.status = OutputStatus.NEEDS_CONFIRMATION
         val pipeline = newPipeline()

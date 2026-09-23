@@ -36,7 +36,7 @@ import java.io.File
 /**
  * 模型 B 固定窗口切片识别源验收（P6 联调，2026-09-23 用户流程）：
  * 词级候选累积草稿、拒绝词触发重打提示（不打扰不震动）、组句 needsConfirmation
- * 布尔直接映射边界可靠性（无数值置信度不伪造）、pts 账本、失败保留候选可重试。
+ * 布尔直接映射边界可靠性（无数值置信度不伪造）、pts 账本、句尾切片先识别再组句。
  */
 class ClipRecognitionSourceTest {
 
@@ -55,6 +55,7 @@ class ClipRecognitionSourceTest {
         var lastComposeSegmentId: String? = null
         var lastComposeRevision = -1
         var composeGestureCount = -1
+        var composedLabels = emptyList<List<String>>()
         var echoMismatch = false
 
         override suspend fun recognize(videoBytes: ByteArray, token: String): CvResult {
@@ -75,6 +76,7 @@ class ClipRecognitionSourceTest {
             lastComposeSegmentId = segmentId
             lastComposeRevision = revision
             composeGestureCount = gestures.size
+            composedLabels = gestures.map { result -> result.candidates.map { it.label } }
             return ComposeResult(
                 sentence = composeSentence,
                 alternatives = emptyList(),
@@ -90,6 +92,8 @@ class ClipRecognitionSourceTest {
         var attached = false
         var detached = false
         var callback: ((File, Long, Long) -> Unit)? = null
+        var boundary: (() -> Unit)? = null
+        var dropped: (() -> Unit)? = null
         var lastWindowUs = -1L
         var failReason: String? = null
 
@@ -98,19 +102,30 @@ class ClipRecognitionSourceTest {
             windowUs: Long,
             scope: CoroutineScope,
             onSegment: (File, Long, Long) -> Unit,
+            onDropped: () -> Unit,
+            onSentenceBoundary: () -> Unit,
         ): String? {
             failReason?.let { return it }
             attached = true
             callback = onSegment
+            boundary = onSentenceBoundary
+            dropped = onDropped
             lastWindowUs = windowUs
             outputDir.mkdirs()
             return null
+        }
+
+        override fun finishSentence(): Boolean {
+            boundary?.invoke()
+            return boundary != null
         }
 
         override fun detach() {
             attached = false
             detached = true
             callback = null
+            boundary = null
+            dropped = null
         }
     }
 
@@ -251,6 +266,7 @@ class ClipRecognitionSourceTest {
         assertEquals(1_000_000L, final.tokenSpans!!.first().startPtsUs)
         assertEquals(5_000_000L, boundary.cutoffPtsUs)
         assertEquals(2, transport.composeGestureCount)
+        assertEquals(listOf(listOf("我"), listOf("回", "去")), transport.composedLabels)
         assertEquals("组句待核对", source.statusText.value)
 
         // 成功后清空：下一词开新段
@@ -281,7 +297,42 @@ class ClipRecognitionSourceTest {
     }
 
     @Test
-    fun `组句失败（null 句子）保留候选可重试；回显不匹配拒绝结果`() = runBlocking {
+    fun `句尾切片尚在识别时不提前组句，等待边界后包含最后一词`() = runBlocking {
+        settings.setRecognitionTokens("cv-tok", "agent-tok")
+        val source = newSource()
+        waitUntil(10_000) { source.isAvailable }
+        source.start()
+        val gate = CompletableDeferred<Unit>()
+        transport.gate = gate
+        transport.cvQueue += ok("我")
+        transport.cvQueue += ok("家")
+        feed.callback!!(clip("first.mp4", byteArrayOf(1)), 0, 2_000_000)
+        feed.callback!!(clip("tail.mp4", byteArrayOf(2)), 2_000_000, 3_000_000)
+        transport.composeSentence = "我想回家"
+        source.finishSentence()
+        assertNull(transport.lastComposeSegmentId)
+        gate.complete(Unit)
+        waitUntil { transport.composeGestureCount == 2 }
+        assertEquals(2, transport.recognizedSizes.size)
+    }
+
+    @Test
+    fun `切片封装失败后句子不提交 Agent`() = runBlocking {
+        settings.setRecognitionTokens("cv-tok", "agent-tok")
+        val source = newSource()
+        waitUntil(10_000) { source.isAvailable }
+        source.start()
+        transport.cvQueue += ok("我")
+        feed.callback!!(clip("first.mp4", byteArrayOf(1)), 0, 2_000_000)
+        waitUntil { transport.recognizedSizes.size == 1 }
+        feed.dropped!!()
+        source.finishSentence()
+        waitUntil { source.statusText.value?.contains("已丢弃") == true }
+        assertNull(transport.lastComposeSegmentId)
+    }
+
+    @Test
+    fun `组句失败后不会把旧候选带到下一句；回显不匹配拒绝结果`() = runBlocking {
         settings.setRecognitionTokens("cv-tok", "agent-tok")
         val source = newSource()
         waitUntil(10_000) { source.isAvailable }
@@ -299,7 +350,11 @@ class ClipRecognitionSourceTest {
         assertTrue(updates.none { it.boundary != null })
         assertEquals(1, transport.lastComposeRevision)
 
-        // 回显不匹配：拒绝，不产出更新
+        // 上句候选已封存；新句需重新识别
+        transport.cvQueue += ok("你")
+        feed.callback!!(clip("b.mp4", byteArrayOf(2)), 3_000_000, 5_000_000)
+        waitUntil { updates.size == 2 }
+        // 回显不匹配：拒绝，不产出边界更新
         transport.composeSentence = "我想回家"
         transport.echoMismatch = true
         source.finishSentence()
@@ -307,8 +362,11 @@ class ClipRecognitionSourceTest {
         assertEquals(2, transport.lastComposeRevision)
         assertTrue(updates.none { it.boundary != null })
 
-        // 恢复后重试成功：候选仍在（未因失败丢弃）
+        // 再打新句后成功
         transport.echoMismatch = false
+        transport.cvQueue += ok("家")
+        feed.callback!!(clip("c.mp4", byteArrayOf(3)), 6_000_000, 8_000_000)
+        waitUntil { updates.size == 3 }
         source.finishSentence()
         waitUntil { updates.any { it.boundary != null } }
         assertEquals("我想回家", updates.last().draftText)
@@ -326,7 +384,7 @@ class ClipRecognitionSourceTest {
         scope.launch { source.needsRepeat.collect { repeats++ } }
         source.start()
 
-        // 首段识别被 gate 挂起 = 消费停滞；积压 2 段后第 4 段溢出
+        // 首段识别被 gate 挂起 = 消费停滞；积压 3 段后第 4 段溢出
         transport.gate = CompletableDeferred()
         transport.cvQueue += ok("我")
         transport.cvQueue += ok("回")
@@ -339,14 +397,12 @@ class ClipRecognitionSourceTest {
         assertFalse(File(tmp.root, "d.mp4").exists())
 
         transport.gate!!.complete(Unit)
-        waitUntil { updates.size == 3 }
-        // 溢出触发一次重打提示；"我"所在句被作废，b/c 以新段重开
+        source.finishSentence()
+        waitUntil { repeats == 1 }
+        // 溢出触发一次重打提示；本句全部作废，不向 Agent 提交缺词句
         assertEquals(1, repeats)
-        assertEquals("我", updates[0].draftText)
-        assertEquals("回", updates[1].draftText)
-        assertEquals("回 · 家", updates[2].draftText)
-        assertFalse(updates[1].segmentId == updates[0].segmentId)
-        assertEquals("已收 2 词；打完点「完成本句」", source.statusText.value)
+        assertTrue(updates.none { it.boundary != null })
+        assertNull(transport.lastComposeSegmentId)
     }
 
     @Test

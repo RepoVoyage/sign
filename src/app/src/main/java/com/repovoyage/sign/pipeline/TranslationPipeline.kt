@@ -211,6 +211,14 @@ class TranslationPipeline(
         handle(sm.discard(segmentId), sm)
     }
 
+    /** 用户确认 Agent 组句文本后，才进入字幕、翻译与语音流程。 */
+    fun confirmPending(segmentId: String) {
+        val sm = manager ?: return
+        if (_state.value.pendingConfirm.none { it.segmentId == segmentId }) return
+        val (startPts, endPts) = segmentPts[segmentId] ?: (0L to 0L)
+        handle(sm.finalize(segmentId, startPts, endPts, userConfirmed = true), sm)
+    }
+
     /**
      * 用户核对 LLM 低置信结果（§2.7 疑义核对/纠错入口，2026-09-23 用户决定：
      * 震动提示后由用户修改）：
@@ -283,6 +291,10 @@ class TranslationPipeline(
      * CV 侧候选分散等不确定由组合 LLM 消化，不直接打扰用户。
      */
     private fun submit(update: RecognitionUpdate, sm: SentenceManager) {
+        if (update.discarded) {
+            update.segmentId?.let { handle(sm.discardIncomplete(it), sm) }
+            return
+        }
         val effective = if (
             update.confidence != null &&
             update.confidence < LOW_CONFIDENCE_THRESHOLD &&

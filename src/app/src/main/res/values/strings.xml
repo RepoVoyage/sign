@@ -44,6 +44,7 @@
     <string name="pending_confirm_title">待核对</string>
     <string name="pending_confirm_reason">原因：%1$s</string>
     <string name="action_discard">放弃</string>
+    <string name="action_confirm">确认</string>
     <string name="unspoken_marker">未播报</string>
     <string name="action_replay">重播</string>
     <string name="result_unavailable">不可用</string>

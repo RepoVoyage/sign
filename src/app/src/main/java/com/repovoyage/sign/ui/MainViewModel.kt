@@ -247,6 +247,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun discardPending(segmentId: String) = signApp.pipeline.discardPending(segmentId)
 
+    fun confirmPending(segmentId: String) = signApp.pipeline.confirmPending(segmentId)
+
     fun replay(segmentId: String, language: LangCode) =
         signApp.pipeline.replay(segmentId, language)
 

@@ -236,6 +236,7 @@ fun MainScreen(
                 else R.string.subtitle_empty_idle,
             ),
             onDiscard = vm::discardPending,
+            onConfirm = vm::confirmPending,
             onReplay = vm::replay,
             onCorrect = vm::submitCorrection,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -267,6 +268,7 @@ private fun SubtitleArea(
     voiceUnready: Set<LangCode>,
     emptyHint: String,
     onDiscard: (String) -> Unit,
+    onConfirm: (String) -> Unit,
     onReplay: (String, LangCode) -> Unit,
     onCorrect: (String, LangCode, String) -> Unit,
     modifier: Modifier = Modifier,
@@ -311,8 +313,13 @@ private fun SubtitleArea(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    TextButton(onClick = { onDiscard(pending.segmentId) }) {
-                        Text(stringResource(R.string.action_discard))
+                    Row {
+                        TextButton(onClick = { onConfirm(pending.segmentId) }) {
+                            Text(stringResource(R.string.action_confirm))
+                        }
+                        TextButton(onClick = { onDiscard(pending.segmentId) }) {
+                            Text(stringResource(R.string.action_discard))
+                        }
                     }
                 }
             }

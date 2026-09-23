@@ -29,6 +29,7 @@ data class RecognitionUpdate(
     val tokenSpans: List<TokenSpan>? = null,
     val confidence: Float? = null,
     val boundary: BoundarySignal? = null,
+    val discarded: Boolean = false,
 )
 
 data class TokenSpan(

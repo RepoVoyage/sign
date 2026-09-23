@@ -2,6 +2,7 @@ package com.repovoyage.sign.recognition
 
 import com.repovoyage.sign.camera.SdkCameraSession
 import com.repovoyage.sign.video.ClipSegmenter
+import com.repovoyage.sign.video.ClipOutput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -22,6 +23,8 @@ class CameraClipFeed(private val sessionProvider: () -> SdkCameraSession?) : Cli
         windowUs: Long,
         scope: CoroutineScope,
         onSegment: (File, Long, Long) -> Unit,
+        onDropped: () -> Unit,
+        onSentenceBoundary: () -> Unit,
     ): String? {
         val sdk = sessionProvider() ?: return "请先连接相机并开始取流"
         val stats = sdk.decodeStats.value
@@ -41,11 +44,21 @@ class CameraClipFeed(private val sessionProvider: () -> SdkCameraSession?) : Cli
         sdk.encodedFrameTap = segmenter::offer
         scope.launch { segmenter.run() }
         scope.launch {
-            segmenter.segments.collect { seg -> onSegment(seg.file, seg.startPtsUs, seg.endPtsUs) }
+            segmenter.segments.collect { output ->
+                when (output) {
+                    is ClipOutput.Video -> onSegment(
+                        output.segment.file, output.segment.startPtsUs, output.segment.endPtsUs,
+                    )
+                    ClipOutput.Dropped -> onDropped()
+                    ClipOutput.SentenceBoundary -> onSentenceBoundary()
+                }
+            }
         }
         sdk.requestKeyFrame()
         return null
     }
+
+    override fun finishSentence(): Boolean = segmenter?.flushSentence() ?: false
 
     override fun detach() {
         session?.encodedFrameTap = null

@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 切片识别传输（HTTP 实现见 [HttpClipTransport]；JVM 测试注入替身） */
 interface ClipTransport {
@@ -40,7 +41,15 @@ interface ClipTransport {
  * @return attach 失败原因（展示用）；null = 成功
  */
 interface ClipFeed {
-    fun attach(outputDir: File, windowUs: Long, scope: CoroutineScope, onSegment: (File, Long, Long) -> Unit): String?
+    fun attach(
+        outputDir: File,
+        windowUs: Long,
+        scope: CoroutineScope,
+        onSegment: (File, Long, Long) -> Unit,
+        onDropped: () -> Unit,
+        onSentenceBoundary: () -> Unit,
+    ): String?
+    fun finishSentence(): Boolean
     fun detach()
 }
 
@@ -102,12 +111,22 @@ class ClipRecognitionSource(
      * 推理慢于窗口）时不允许无限排队——溢出的切片丢弃且**本句作废**
      * （中间缺词的句子不可信），提示重打并建议加大窗口。
      */
-    private data class PendingClip(val file: File, val startPtsUs: Long, val endPtsUs: Long)
+    private sealed interface QueueItem {
+        data class Clip(val file: File, val startPtsUs: Long, val endPtsUs: Long, val sentenceId: Long) : QueueItem
+        data class Finish(val sentenceId: Long) : QueueItem
+    }
 
-    private var clipQueue: Channel<PendingClip>? = null
+    private class ClipQueue {
+        val items = Channel<QueueItem>(Channel.UNLIMITED)
+        val pendingClips = AtomicInteger()
+    }
+
+    private var clipQueue: ClipQueue? = null
     private var consumerJob: Job? = null
-
-    @Volatile private var sentenceBroken = false
+    private val composeLock = Mutex()
+    private val brokenSentences = mutableSetOf<Long>()
+    @Volatile private var captureSentenceId = 0L
+    @Volatile private var finishPending = false
 
     init {
         scope.launch {
@@ -126,31 +145,54 @@ class ClipRecognitionSource(
         composeRevision = 0
         currentSegmentId = null
         gestures.clear()
-        sentenceBroken = false
+        synchronized(brokenSentences) { brokenSentences.clear() }
+        captureSentenceId = 0L
+        finishPending = false
         sessionId = UUID.randomUUID().toString()
         outputDir.mkdirs()
         outputDir.listFiles()?.forEach { it.delete() }
         // §2.4.7：相机在线时进程默认网络无公网，切片上传必须走蜂窝；
         // 释放归管线 stop()（与 LLM 共用同一持有者，幂等）
         acquireCellular()
-        val queue = Channel<PendingClip>(CLIP_BACKLOG_CAPACITY)
+        val queue = ClipQueue()
         clipQueue = queue
         consumerJob = scope.launch {
-            for (clip in queue) {
-                if (sentenceBroken) {
-                    sentenceBroken = false
-                    invalidateSentenceLocked("识别跟不上切片速度：本句已丢弃，请重打（可加大切片窗口）")
+            for (item in queue.items) {
+                when (item) {
+                    is QueueItem.Clip -> try {
+                        onClip(item)
+                    } finally {
+                        queue.pendingClips.decrementAndGet()
+                    }
+                    is QueueItem.Finish -> onSentenceBoundary(item.sentenceId)
                 }
-                onClip(clip.file, clip.startPtsUs, clip.endPtsUs)
             }
         }
-        _statusText.value = feed.attach(outputDir, windowUs, scope) { file, startPtsUs, endPtsUs ->
-            val q = clipQueue
-            if (q == null || q.trySend(PendingClip(file, startPtsUs, endPtsUs)).isFailure) {
-                file.delete()
-                sentenceBroken = true
-            }
-        }
+        _statusText.value = feed.attach(
+            outputDir, windowUs, scope,
+            onSegment = { file, startPtsUs, endPtsUs ->
+                val sentenceId = captureSentenceId
+                if (clipQueue !== queue || !running) {
+                    file.delete()
+                } else if (queue.pendingClips.incrementAndGet() > MAX_PENDING_CLIPS) {
+                    queue.pendingClips.decrementAndGet()
+                    file.delete()
+                    breakSentence(sentenceId, "识别跟不上切片速度：本句已丢弃，请重打（可加大切片窗口）")
+                } else if (queue.items.trySend(QueueItem.Clip(file, startPtsUs, endPtsUs, sentenceId)).isFailure) {
+                    queue.pendingClips.decrementAndGet()
+                    file.delete()
+                    breakSentence(sentenceId, "切片队列已关闭，请重打本句")
+                }
+            },
+            onDropped = {
+                breakSentence(captureSentenceId, "相机切片封装失败或过短，本句已丢弃；请重打")
+            },
+            onSentenceBoundary = {
+                val sentenceId = captureSentenceId++
+                finishPending = false
+                if (clipQueue === queue && running) queue.items.trySend(QueueItem.Finish(sentenceId))
+            },
+        )
     }
 
     override fun stop() {
@@ -162,127 +204,203 @@ class ClipRecognitionSource(
         val q = clipQueue
         clipQueue = null
         if (q != null) {
-            q.close()
+            q.items.close()
             while (true) {
-                val clip = q.tryReceive().getOrNull() ?: break
-                clip.file.delete()
+                val item = q.items.tryReceive().getOrNull() ?: break
+                if (item is QueueItem.Clip) {
+                    item.file.delete()
+                    q.pendingClips.decrementAndGet()
+                }
             }
         }
         gestures.clear()
         currentSegmentId = null
-        sentenceBroken = false
+        synchronized(brokenSentences) { brokenSentences.clear() }
+        finishPending = false
         _statusText.value = null
     }
 
-    /** 本句作废：清空已收候选并触发重打提示（调用方持锁或在消费者协程内） */
-    private suspend fun invalidateSentenceLocked(message: String) {
-        lock.withLock {
-            gestures.clear()
-            currentSegmentId = null
+    private fun breakSentence(sentenceId: Long, message: String) {
+        if (synchronized(brokenSentences) { brokenSentences.add(sentenceId) }) {
+            _statusText.value = message
+            _needsRepeat.tryEmit(Unit)
         }
-        _statusText.value = message
-        _needsRepeat.emit(Unit)
     }
 
-    /** 用户「完成本句」：已收集候选送 Agent 组句，结果作为一个段更新进管线 */
+    private fun isBroken(sentenceId: Long): Boolean =
+        synchronized(brokenSentences) { sentenceId in brokenSentences }
+
+    private data class SentenceSnapshot(
+        val gestures: List<CvResult>,
+        val segmentId: String,
+        val revision: Int,
+        val sessionId: String,
+        val epoch: Long,
+        val startPtsUs: Long,
+        val endPtsUs: Long,
+        val agentToken: String,
+    )
+
+    /** Seal the current clip first; the feed delivers its clip before the boundary marker. */
     fun finishSentence() {
+        if (!running || finishPending) return
+        finishPending = true
+        _statusText.value = "正在等待句尾切片识别…"
+        if (!feed.finishSentence()) {
+            finishPending = false
+            breakSentence(captureSentenceId, "句尾切片未能提交，请停止并重新开始识别")
+        }
+    }
+
+    private suspend fun onSentenceBoundary(sentenceId: Long) {
         if (!running) return
-        scope.launch {
-            lock.withLock {
-                if (gestures.isEmpty()) {
-                    _statusText.value = "本句还没有识别到词"
-                    return@launch
-                }
-                val segId = currentSegmentId ?: return@launch
-                val revision = ++composeRevision
-                _statusText.value = "正在补全句子…"
-                val result = try {
-                    transport.compose(sessionId, segId, revision, gestures.toList(), tokens.agentToken)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    _statusText.value = error.message ?: "补全请求失败"
-                    return@launch
-                }
-                if (!running) return@launch
-                if (result.segmentId != segId || result.revision != revision) {
-                    _statusText.value = "Agent 返回的段 ID 或修订号不匹配"
-                    return@launch
-                }
-                val sentence = result.sentence
-                if (sentence == null) {
-                    _statusText.value = "未能确定句子：${result.status}；可继续补词或重打"
-                    return@launch
-                }
-                _updates.emit(
-                    RecognitionUpdate(
-                        sequenceEpoch = epoch,
-                        segmentId = segId,
-                        draftText = sentence,
-                        tokenSpans = listOf(
-                            TokenSpan(sentence, sentenceStartPtsUs, lastClipEndPtsUs, stable = true),
-                        ),
-                        confidence = null,   // Agent 无数值置信度，不伪造
-                        boundary = BoundarySignal(
-                            cutoffPtsUs = lastClipEndPtsUs,
-                            requiredFutureContextUs = 0,
-                            reliability = if (result.needsConfirmation) {
-                                BoundaryReliability.UNCERTAIN
-                            } else {
-                                BoundaryReliability.RELIABLE
-                            },
-                            source = BoundarySource.MODEL,
-                        ),
-                    ),
-                )
+        if (synchronized(brokenSentences) { brokenSentences.remove(sentenceId) }) {
+            val discardedId = lock.withLock {
+                val id = currentSegmentId
                 gestures.clear()
                 currentSegmentId = null
-                _statusText.value = if (result.needsConfirmation) "组句待核对" else null
+                id
+            }
+            if (discardedId != null) discardDraft(discardedId, epoch)
+            _statusText.value = "本句有切片识别失败，已丢弃；请重打整句"
+            return
+        }
+        val snapshot = lock.withLock {
+            val segId = currentSegmentId
+            if (gestures.isEmpty() || segId == null) null else SentenceSnapshot(
+                gestures = gestures.toList(),
+                segmentId = segId,
+                revision = ++composeRevision,
+                sessionId = sessionId,
+                epoch = epoch,
+                startPtsUs = sentenceStartPtsUs,
+                endPtsUs = lastClipEndPtsUs,
+                agentToken = tokens.agentToken,
+            ).also {
+                gestures.clear()
+                currentSegmentId = null
             }
         }
+        if (snapshot == null) {
+            _statusText.value = "本句还没有识别到词"
+            return
+        }
+        _statusText.value = "正在补全句子…"
+        // Agent may take seconds. Keep consuming new camera clips while it runs.
+        scope.launch {
+            composeLock.withLock { composeSnapshot(snapshot) }
+        }
+    }
+
+    private suspend fun composeSnapshot(snapshot: SentenceSnapshot) {
+        val result = try {
+            transport.compose(
+                snapshot.sessionId, snapshot.segmentId, snapshot.revision,
+                snapshot.gestures, snapshot.agentToken,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (running && epoch == snapshot.epoch) {
+                discardDraft(snapshot.segmentId, snapshot.epoch)
+                _statusText.value = error.message ?: "补全请求失败，请重打"
+            }
+            return
+        }
+        if (!running || epoch != snapshot.epoch || sessionId != snapshot.sessionId) return
+        if (result.segmentId != snapshot.segmentId || result.revision != snapshot.revision) {
+            discardDraft(snapshot.segmentId, snapshot.epoch)
+            _statusText.value = "Agent 返回的段 ID 或修订号不匹配"
+            return
+        }
+        val sentence = result.sentence
+        if (sentence == null) {
+            discardDraft(snapshot.segmentId, snapshot.epoch)
+            _statusText.value = "未能确定句子：${result.status}；请重打"
+            return
+        }
+        _updates.emit(
+            RecognitionUpdate(
+                sequenceEpoch = snapshot.epoch,
+                segmentId = snapshot.segmentId,
+                draftText = sentence,
+                tokenSpans = listOf(TokenSpan(sentence, snapshot.startPtsUs, snapshot.endPtsUs, stable = true)),
+                confidence = null,   // Agent 无数值置信度，不伪造
+                boundary = BoundarySignal(
+                    cutoffPtsUs = snapshot.endPtsUs,
+                    requiredFutureContextUs = 0,
+                    reliability = if (result.needsConfirmation) {
+                        BoundaryReliability.UNCERTAIN
+                    } else {
+                        BoundaryReliability.RELIABLE
+                    },
+                    source = BoundarySource.MODEL,
+                ),
+            ),
+        )
+        _statusText.value = if (result.needsConfirmation) "组句待核对" else null
+    }
+
+    private suspend fun discardDraft(segmentId: String, updateEpoch: Long) {
+        _updates.emit(RecognitionUpdate(updateEpoch, segmentId, "", discarded = true))
     }
 
     // ---------------------------------------------------------------- 内部
 
-    private suspend fun onClip(file: File, startPtsUs: Long, endPtsUs: Long) {
-        val bytes = runCatching { file.readBytes() }.getOrNull()
-        file.delete()
-        if (!running || bytes == null) return
+    private suspend fun onClip(clip: QueueItem.Clip) {
+        if (isBroken(clip.sentenceId)) {
+            clip.file.delete()
+            return
+        }
+        val bytes = runCatching { clip.file.readBytes() }.getOrNull()
+        clip.file.delete()
+        if (!running) return
+        if (bytes == null) {
+            breakSentence(clip.sentenceId, "无法读取切片，本句已丢弃；请重打")
+            return
+        }
         retainForDebug(bytes)
-        lock.withLock {
-            if (!running) return
-            _statusText.value = "正在识别第 ${gestures.size + 1} 个词…"
-            val result = try {
-                transport.recognize(bytes, tokens.cvToken)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                _statusText.value = error.message ?: "识别请求失败"
-                return
-            }
-            if (!running) return
-            if (result.status == "OK" && result.candidates.isNotEmpty()) {
+        val runEpoch = epoch
+        _statusText.value = "正在识别切片…"
+        val result = try {
+            transport.recognize(bytes, tokens.cvToken)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            breakSentence(clip.sentenceId, error.message ?: "识别请求失败，本句已丢弃；请重打")
+            return
+        }
+        if (!running || epoch != runEpoch || isBroken(clip.sentenceId)) return
+        if (result.status != "OK" || result.candidates.isEmpty()) {
+            breakSentence(
+                clip.sentenceId,
+                "该词未加入：${result.status}（${result.frames} 帧、手部 " +
+                    "${(result.anyHandFraction * 100).toInt()}%）；本句已丢弃，请重打",
+            )
+            return
+        }
+        val (update, acceptedCount) = lock.withLock {
+            if (gestures.size >= MAX_GESTURES) {
+                null to 0
+            } else {
                 if (gestures.isEmpty()) {
-                    sentenceStartPtsUs = startPtsUs
+                    sentenceStartPtsUs = clip.startPtsUs
                     currentSegmentId = "clip-$epoch-${++sentenceSeq}"
                 }
-                lastClipEndPtsUs = endPtsUs
+                lastClipEndPtsUs = clip.endPtsUs
                 gestures += result
-                _updates.emit(
-                    RecognitionUpdate(
-                        sequenceEpoch = epoch,
-                        segmentId = currentSegmentId,
-                        draftText = gestures.joinToString(" · ") { it.candidates.first().label },
-                    ),
-                )
-                _statusText.value = "已收 ${gestures.size} 词；打完点「完成本句」"
-            } else {
-                _needsRepeat.emit(Unit)
-                // 带上帧数/手部帧占比：区分「切片坏了」（帧数异常少）与
-                // 「机位看不到手」（帧数正常但占比低）两类根因
-                _statusText.value = "该词未加入：${result.status}" +
-                    "（${result.frames} 帧、手部 ${(result.anyHandFraction * 100).toInt()}%），请重打"
+                RecognitionUpdate(
+                    sequenceEpoch = epoch,
+                    segmentId = currentSegmentId,
+                    draftText = gestures.joinToString(" · ") { it.candidates.first().label },
+                ) to gestures.size
             }
+        }
+        if (update == null) {
+            breakSentence(clip.sentenceId, "本句超过 $MAX_GESTURES 个切片，已丢弃；请重打")
+        } else {
+            _updates.emit(update)
+            _statusText.value = "已收 $acceptedCount 词；打完点「完成本句」"
         }
     }
 
@@ -303,6 +421,9 @@ class ClipRecognitionSource(
 
         /** 待识别积压上限（另有一段在识别中）；溢出即丢句重打，不无限排队 */
         const val CLIP_BACKLOG_CAPACITY = 2
+
+        private const val MAX_PENDING_CLIPS = CLIP_BACKLOG_CAPACITY + 1
+        private const val MAX_GESTURES = 12
 
         private const val MAX_RETAINED_CLIPS = 5
     }

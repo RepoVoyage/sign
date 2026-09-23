@@ -8,6 +8,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.File
 
+/** Output order is preserved: a flushed clip is delivered before its sentence boundary. */
+sealed interface ClipOutput {
+    data class Video(val segment: ClipSegment) : ClipOutput
+    data object Dropped : ClipOutput
+    data object SentenceBoundary : ClipOutput
+}
+
 /**
  * 固定窗口切片器（P6 联调，2026-09-23 用户定义：固定时长窗口切分）：
  * 消费取流路径分流的编码帧（[com.repovoyage.sign.camera.SdkCameraSession]
@@ -28,22 +35,30 @@ class ClipSegmenter(
     private val onKeyFrameNeeded: () -> Unit,
 ) {
 
-    private val frames = Channel<EncodedFrame>(CHANNEL_CAPACITY)
-    private val _segments = Channel<ClipSegment>(Channel.UNLIMITED)
+    private sealed interface Input {
+        data class Frame(val value: EncodedFrame) : Input
+        data object FlushSentence : Input
+    }
+
+    private val frames = Channel<Input>(CHANNEL_CAPACITY)
+    private val _segments = Channel<ClipOutput>(Channel.UNLIMITED)
 
     /** 完成的 MP4 段（消费方负责上传后删除文件） */
-    val segments: Flow<ClipSegment> = _segments.receiveAsFlow()
+    val segments: Flow<ClipOutput> = _segments.receiveAsFlow()
 
     @Volatile
     private var overflowed = false
 
     /** 取流协程调用（非阻塞）；溢出 = 当前段已不可用，请求关键帧重同步 */
     fun offer(frame: EncodedFrame) {
-        if (frames.trySend(frame).isFailure) {
+        if (frames.trySend(Input.Frame(frame)).isFailure) {
             overflowed = true
             onKeyFrameNeeded()
         }
     }
+
+    /** Cut at the user's sentence boundary after all frames already queued for the muxer. */
+    fun flushSentence(): Boolean = frames.trySend(Input.FlushSentence).isSuccess
 
     /** 切片消费循环（调用方在自有 scope 启动）；随 frames Channel 关闭而退出 */
     suspend fun run() {
@@ -57,16 +72,17 @@ class ClipSegmenter(
         var framesWritten = 0
         var index = 0
 
-        fun closeSegment(emit: Boolean) {
+        fun closeSegment(emit: Boolean, reportDrop: Boolean = true) {
             val m = muxer ?: return
             // stop() 成功才写全 moov：失败的段文件不可解码，一律丢弃
             val stopped = framesWritten > 0 && runCatching { m.stop() }.isSuccess
             runCatching { m.release() }
             val f = file
             if (emit && !corrupted && stopped && f != null) {
-                _segments.trySend(ClipSegment(f, startPts, lastPts))
+                _segments.trySend(ClipOutput.Video(ClipSegment(f, startPts, lastPts)))
             } else {
                 f?.delete()
+                if (reportDrop) _segments.trySend(ClipOutput.Dropped)
             }
             muxer = null
             file = null
@@ -74,11 +90,20 @@ class ClipSegmenter(
         }
 
         try {
-            for (frame in frames) {
+            for (input in frames) {
                 if (overflowed) {
                     corrupted = true
                     overflowed = false
                 }
+                if (input is Input.FlushSentence) {
+                    // A trailing fragment shorter than the CV minimum is not a word.
+                    closeSegment(emit = !corrupted && framesWritten >= MIN_CV_FRAMES)
+                    corrupted = false
+                    onKeyFrameNeeded()
+                    _segments.trySend(ClipOutput.SentenceBoundary)
+                    continue
+                }
+                val frame = (input as Input.Frame).value
                 val generationChanged = muxer != null && frame.streamGeneration != generation
                 if (muxer != null && (generationChanged || frame.ptsUs - startPts >= windowUs || corrupted)) {
                     // 换代残段/坏段丢弃：只有完整窗口的干净段才产出
@@ -140,7 +165,7 @@ class ClipSegmenter(
                 }
             }
         } finally {
-            closeSegment(emit = false)
+            closeSegment(emit = false, reportDrop = false)
         }
     }
 
@@ -150,6 +175,7 @@ class ClipSegmenter(
 
     private companion object {
         const val CHANNEL_CAPACITY = 64
+        const val MIN_CV_FRAMES = 12
     }
 }
 
