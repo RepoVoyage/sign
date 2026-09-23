@@ -124,6 +124,13 @@ class SignApp : Application() {
         appScope.launch {
             runCatching {
                 applyRetentionPolicy(database.sentenceDao(), System.currentTimeMillis())
+                // 未配置 LLM 凭据 = 语言处理已静默跳过（TranslationPipeline），
+                // 历史里残留的 UNAVAILABLE 行永不会再更新，属纯噪音，启动时清掉；
+                // 日后若重新配置凭据则跳过本清理，保留真实失败标记
+                if (!settings.llmCredentials.first().isConfigured) {
+                    val purged = database.sentenceDao().deleteUnavailableResults()
+                    if (purged > 0) Log.i(TAG, "purged $purged legacy UNAVAILABLE results")
+                }
             }.onFailure { Log.w(TAG, "retention cleanup failed", it) }
         }
     }

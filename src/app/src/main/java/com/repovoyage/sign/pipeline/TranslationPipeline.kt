@@ -376,9 +376,14 @@ class TranslationPipeline(
                     ),
                 )
             }
-            val prefs = settings.preferences.first()    // §2.4.4：每句提交时取设置快照
-            processor.process(sentence, prefs).collect { result ->
-                if (manager === sm) onResult(sentence, result)
+            // 未配置 LLM 凭据 = 无润色/翻译能力（2026-09-24 用户决定砍掉云端 LLM
+            // 配置模块）：静默跳过语言处理，不给每句刷"不可用"噪音行；识别原句
+            // 与中文直读不受影响
+            if (settings.llmCredentials.first().isConfigured) {
+                val prefs = settings.preferences.first()    // §2.4.4：每句提交时取设置快照
+                processor.process(sentence, prefs).collect { result ->
+                    if (manager === sm) onResult(sentence, result)
+                }
             }
         }
     }

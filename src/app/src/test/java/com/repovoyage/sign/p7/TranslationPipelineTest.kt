@@ -132,6 +132,9 @@ class TranslationPipelineTest {
         settings = AppSettings(
             PreferenceDataStoreFactory.create(produceFile = { tmp.newFile("settings.preferences_pb") }),
         )
+        // 语言处理路径默认按"凭据已配置"铺底（2026-09-24 起未配置 = 静默跳过，
+        // 有专门用例覆盖）；LLM 凭据模块已删，仅存 DataStore 残留值能到达这里
+        runBlocking { settings.setLlmCredentials(LlmCredentials("https://api.example.com/v1", "k", "m")) }
         source = FakeSource()
         processor = FakeProcessor()
         tts = FakeTts()
@@ -207,6 +210,24 @@ class TranslationPipelineTest {
         assertEquals("我需要帮助", request.text)
         assertEquals(LangCode("zh-CN"), request.language)
         assertEquals(1_000_000L, request.orderKey)
+        scope.cancel()
+    }
+
+    @Test
+    fun `未配置 LLM 凭据——静默跳过语言处理，原句直读与缓存照常`() = runBlocking {
+        settings.setLlmCredentials(LlmCredentials("", "", ""))
+        val pipeline = newPipeline()
+        pipeline.start("s-test")
+        source.emit(update("帮我", BoundaryReliability.RELIABLE))
+        waitUntil { pipeline.state.value.lines.isNotEmpty() && tts.enqueued.isNotEmpty() }
+        waitUntil { cache.upserts.isNotEmpty() }
+        delay(100)   // 给潜在的 polish 调用留窗（不应发生）
+        assertTrue(processor.processed.isEmpty())
+        assertTrue(pipeline.state.value.lines.single().results.isEmpty())
+        assertTrue(cache.merges.isEmpty())
+        // 中文直读不受影响
+        assertEquals("帮我", tts.enqueued.single().text)
+        assertEquals(LangCode("zh-CN"), tts.enqueued.single().language)
         scope.cancel()
     }
 

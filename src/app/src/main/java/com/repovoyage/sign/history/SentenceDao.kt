@@ -52,4 +52,12 @@ interface SentenceDao {
 
     @Query("DELETE FROM language_results")
     suspend fun deleteAllResults()
+
+    /**
+     * 清除 status=UNAVAILABLE 的结果行（2026-09-24：LLM 配置模块移除前的润色
+     * 失败残留——无文本、纯噪音，且未配置凭据时语言处理不再运行、永不会更新）。
+     * 仅在未配置 LLM 凭据时调用；已配置时保留真实失败标记。
+     */
+    @Query("DELETE FROM language_results WHERE status = 'UNAVAILABLE'")
+    suspend fun deleteUnavailableResults(): Int
 }

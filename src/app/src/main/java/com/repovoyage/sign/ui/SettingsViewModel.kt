@@ -8,7 +8,6 @@ import com.repovoyage.sign.SignApp
 import com.repovoyage.sign.recognition.ModelCatalog
 import com.repovoyage.sign.sentence.LangCode
 import com.repovoyage.sign.settings.AppSettings
-import com.repovoyage.sign.settings.LlmCredentials
 import com.repovoyage.sign.settings.RecognitionTokens
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,9 +45,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     val selectedModelId: StateFlow<String?> =
         settings.selectedModelId.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val llmCredentials: StateFlow<LlmCredentials> =
-        settings.llmCredentials.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LlmCredentials("", "", ""))
-
     val recognitionTokens: StateFlow<RecognitionTokens> =
         settings.recognitionTokens.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RecognitionTokens("", ""))
 
@@ -74,9 +70,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     // 凭据编辑草稿（保存才写入）
-    val urlDraft = MutableStateFlow("")
-    val keyDraft = MutableStateFlow("")
-    val modelDraft = MutableStateFlow("")
     val cvTokenDraft = MutableStateFlow("")
     val agentTokenDraft = MutableStateFlow("")
     val clipWindowDraft = MutableStateFlow("")
@@ -86,10 +79,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (!draftsLoaded) {
                 draftsLoaded = true
-                val c = settings.llmCredentials.first()
-                urlDraft.value = c.baseUrl
-                keyDraft.value = c.apiKey
-                modelDraft.value = c.model
                 val t = settings.recognitionTokens.first()
                 cvTokenDraft.value = t.cvToken
                 agentTokenDraft.value = t.agentToken
@@ -127,11 +116,6 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissSaveNotice() {
         _saveNotice.value = null
-    }
-
-    fun saveCredentials() = viewModelScope.launch {
-        settings.setLlmCredentials(LlmCredentials(urlDraft.value, keyDraft.value, modelDraft.value))
-        _saveNotice.value = R.string.save_success_llm
     }
 
     /** 保存模型 B 识别服务配置（令牌 + 切片窗口；窗口非法输入保持原值） */

@@ -30,8 +30,8 @@ MP4 段 → 蜂窝 POST 上传 → 云端词级 CV（/v1/recognize）→ 候选�
     │ → 直接存历史 + 直接 TTS 朗读（不依赖 LLM 润色）
     │ → 震动核对提醒（needsConfirmation，不阻断）
     ▼
-云端 LLM 润色/翻译（OpenAI 兼容）→ 多语言字幕（zh‑CN/en‑US/ja‑JP）
-    │ → 按语音语言播报（译文 READY 才播）
+（休眠）云端 LLM 润色/翻译 — 配置模块已于 2026-09-24 移除；
+    │ 仅 DataStore 残留凭据的旧装机仍会跑，无凭据静默跳过
     ▼
 历史缓存（Room，默认保存 90 天 / 10000 条）
 ```
@@ -135,12 +135,11 @@ adb install -r src/app/build/outputs/apk/training/debug/app-training-debug.apk
 | **字幕语言** | 默认 `zh-CN`，可选 `en-US` / `ja-JP`；顺序 = 处理优先级 |
 | **语音语言** | ⊆ 字幕语言；总开关启停播报 |
 | **模型 B 识别服务** | CV 令牌 + Agent 令牌（部署方提供），切片窗口（0.5–10s） |
-| **云端 LLM 凭据** | API 地址（OpenAI 兼容）+ 密钥 + 模型名；用于润色/翻译 |
 | **文本缓存** | 默认开；关闭后停止写入新记录 |
 
 ---
 
-## 关键设计决策（2026-09-23 用户定稿）
+## 关键设计决策（2026-09-23/24 用户定稿）
 
 1. **全链路走云，无本地引擎** — `LanguageBackend` / `OutputSource.LOCAL / FALLBACK` 已移除；
 2. **固定时长窗口切分** — 视频切分定义权在用户（settings 可调 0.5–10s，默认 2s）；
@@ -149,7 +148,8 @@ adb install -r src/app/build/outputs/apk/training/debug/app-training-debug.apk
 5. **完成句直接入库 + 直接朗读** — FINAL 时立即读原句（`rawChinese`），不依赖 LLM 润色；润色结果只进字幕不重复播；
 6. **needsConfirmation → 震动提醒（不阻断）** — Agent 标记的需要核对仅触发震动（30s限频）+ 状态行「组句待核对」，句子照常收尾入库播报；
 7. **CV 拒识 → 重打提示**（`needs_repeat`，不震动、不是待核实标志）；
-8. **隐私红线**：成品无视频落盘；凭据仅存本机 DataStore 不内置不提交；日志不输出帧内容/密钥/对话（§2.6/§6.3）。
+8. **隐私红线**：成品无视频落盘；凭据仅存本机 DataStore 不内置不提交；日志不输出帧内容/密钥/对话（§2.6/§6.3）；
+9. **云端 LLM 配置模块移除**（2026-09-24 用户决定）— 组句走云端 Agent，不再需要用户配置 LLM；未配置凭据时语言处理静默跳过（无"不可用"噪音行），字幕 = 识别原句。
 
 ---
 

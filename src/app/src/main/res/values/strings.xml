@@ -9,20 +9,29 @@
     <string name="state_format">状态：%1$s</string>
     <string name="event_format">事件：%1$s</string>
     <string name="scan_hint">点击「扫描相机」开始</string>
-    <string name="scan_button">扫描相机（10 秒）</string>
-    <string name="stop_button">停止会话</string>
     <!-- 采集入口仅 training 显示（CaptureEntry.isAvailable），production 不渲染 -->
     <string name="capture_start_button">开始采集服务（USB）</string>
     <string name="capture_stop_button">停止采集服务</string>
     <string name="scanning">扫描中…</string>
     <string name="found_n_devices">发现 %1$d 台设备</string>
     <string name="scan_finished">扫描完成：%1$d 台设备</string>
-    <string name="devices_expand">展开设备列表（%1$d）</string>
-    <string name="devices_collapse">收起设备列表</string>
     <string name="scan_failed">扫描失败：%1$s</string>
     <string name="connecting_device">连接 %1$s…</string>
     <string name="service_not_ready">前台服务未就绪</string>
     <string name="unnamed_device">未命名设备 %1$d</string>
+    <!-- 配对状态三档（2026-09-24 用户决定：中间技术态不披露，只给可行动语义） -->
+    <string name="status_disconnected">未连接</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_reconnecting">断线重连中（第 %1$d 次）</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_failed">连接失败，点右上角重新扫描</string>
+    <string name="status_paused_hot">相机过热暂停</string>
+    <string name="scan_action">扫描设备</string>
+    <string name="menu_disconnect">断开连接</string>
+    <string name="scan_menu_empty">未发现设备，确认相机已开机后点右上角重扫</string>
+    <string name="subtitle_empty_disconnected">先点右上角扫描并连接相机</string>
+    <string name="value_on">开</string>
+    <string name="value_off">关</string>
     <string name="permission_denied_hint">需要蓝牙权限才能扫描相机，请到系统设置授权</string>
     <string name="stream_stats_format">取流 gen%1$d｜帧 %2$d（I %5$d）｜%3$.1f fps｜%4$.1f MiB</string>
     <string name="decode_stats_format">解码 gen%1$d｜%2$d 帧｜%3$.1f fps｜%4$dx%5$d</string>
@@ -31,7 +40,7 @@
     <string name="nav_settings">设置</string>
     <string name="nav_history">历史</string>
     <string name="nav_back">返回</string>
-    <string name="tab_main">翻译</string>
+    <string name="tab_main">语桥</string>
     <string name="state_live_badge">取流中</string>
     <string name="repeat_prompt">该词未被识别（手部画面不足或片段过短），请重打一次</string>
     <string name="subtitle_empty_idle">点上方「开始翻译」，识别到的句子会按新到旧落在这里</string>
@@ -57,6 +66,8 @@
     <string name="action_save">保存</string>
 
     <string name="settings_title">设置</string>
+    <string name="settings_section_language">语言</string>
+    <string name="model_unselected">未选择</string>
     <string name="settings_languages_title">字幕语言</string>
     <string name="settings_languages_hint">选择顺序即处理优先级；至少保留一种</string>
     <string name="settings_spoken_title">语音语言</string>
@@ -78,19 +89,10 @@
     <string name="cache_notice_title">关于文本缓存</string>
     <string name="cache_notice_body">本 App 默认在本机保存已确认的文本与翻译结果，用于历史回看与导出。\n\n保留期限：最近 90 天且不超过 10000 条，超限自动清理。\n删除方法：历史页可按句、按会话或全部删除；也可在设置中关闭缓存（关闭后不再写入新记录）。\n\n数据仅保存在本机应用私有目录，不进入系统备份。</string>
     <string name="cache_notice_confirm">知道了</string>
-    <string name="settings_llm_title">云端 LLM 凭据</string>
-    <string name="settings_llm_hint">凭据仅存本机；App 在地址后追加 /chat/completions，任何 OpenAI 兼容服务均可；未配置时语言结果显示为不可用</string>
-    <string name="settings_llm_cost_notice">启用云端后，已确认的文本将离机发送至您配置的服务（可能产生 API 费用）；连接相机期间走蜂窝数据（可能产生流量费用）。请确认所选服务的计费方式后再启用。</string>
-    <string name="llm_base_url_label">API 地址（OpenAI 兼容）</string>
-    <string name="llm_api_key_label">API 密钥</string>
-    <string name="llm_model_label">模型名</string>
-    <string name="llm_save">保存凭据</string>
     <string name="llm_configured">已配置</string>
     <string name="llm_not_configured">未配置</string>
-    <string name="llm_saved">凭据已保存</string>
     <string name="save_success_title">保存成功</string>
     <string name="save_success_recognition">识别服务配置已保存；切片窗口在下次开始翻译时生效</string>
-    <string name="save_success_llm">LLM 凭据已保存并生效</string>
     <string name="action_ok">确定</string>
 
     <string name="history_title">历史</string>

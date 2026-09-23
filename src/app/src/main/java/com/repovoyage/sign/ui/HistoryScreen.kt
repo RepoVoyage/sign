@@ -1,7 +1,6 @@
 package com.repovoyage.sign.ui
 
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,12 +40,17 @@ import java.util.Date
 private data class PendingRename(val group: ConversationGroup, val current: String)
 
 /**
- * 历史内容（§2.6 + 2026-09-23 用户需求）：按会话分组；对话可重命名（默认名=
- * 起始时间）；三级删除 + 导出。导出/全部删除入口为顶栏右上角小图标
- * （MainActivity 触发，弹窗状态经 [HistoryViewModel] 传递到此处渲染）。
+ * 历史（apple-design master-detail，2026-09-24 用户决定）：根 = 每会话一行
+ *（名称 + 句数 + ›），点行进详情（句卡片流 + 重命名/删除该会话）；详情态由
+ * MainActivity 持有（顶栏返回）。导出/全部删除为根列表顶栏右上角小图标，
+ * 弹窗状态经 [HistoryViewModel] 传递到此处渲染。
  */
 @Composable
-fun HistoryScreen(vm: HistoryViewModel) {
+fun HistoryScreen(
+    vm: HistoryViewModel,
+    openGroupKey: String?,
+    onOpenGroup: (String?) -> Unit,
+) {
     val groups by vm.groups.collectAsStateWithLifecycle()
     val names by vm.conversationNames.collectAsStateWithLifecycle()
     val exportChooserVisible by vm.exportChooserVisible.collectAsStateWithLifecycle()
@@ -105,7 +109,12 @@ fun HistoryScreen(vm: HistoryViewModel) {
                 TextButton(onClick = {
                     vm.deleteAll()
                     vm.hideDeleteAll()
-                }) { Text(stringResource(R.string.action_delete)) }
+                }) {
+                    Text(
+                        stringResource(R.string.action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = vm::hideDeleteAll) { Text(stringResource(R.string.action_cancel)) }
@@ -113,35 +122,65 @@ fun HistoryScreen(vm: HistoryViewModel) {
         )
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (groups.isEmpty()) {
-            Text(
-                stringResource(R.string.history_empty),
-                modifier = Modifier.padding(top = 32.dp).fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
+    val openGroup = groups.find { it.key == openGroupKey }
+    if (openGroupKey == null || openGroup == null) {
+        // ------------------------------------------------ 根：会话行列表
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+        ) {
+            if (groups.isEmpty()) {
+                Text(
+                    stringResource(R.string.history_empty),
+                    modifier = Modifier.padding(top = 16.dp).fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn {
+                    item(key = "groups") {
+                        AppleGroupCard {
+                            groups.forEachIndexed { index, group ->
+                                AppleRow(
+                                    title = vm.displayName(group, names),
+                                    subtitle = stringResource(
+                                        R.string.history_group_count, group.entries.size,
+                                    ),
+                                ) { onOpenGroup(group.key) }
+                                if (index < groups.lastIndex) AppleRowDivider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // ------------------------------------------------ 详情：句卡片流
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = {
+                    pendingRename = PendingRename(openGroup, vm.displayName(openGroup, names))
+                }) { Text(stringResource(R.string.history_rename)) }
+                TextButton(onClick = { pendingDeleteGroup = openGroup }) {
+                    Text(
+                        stringResource(R.string.history_delete_group),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                groups.forEach { group ->
-                    item(key = "group-${group.key}") {
-                        GroupHeader(
-                            name = vm.displayName(group, names),
-                            count = group.entries.size,
-                            onRename = {
-                                pendingRename = PendingRename(group, vm.displayName(group, names))
-                            },
-                            onDelete = { pendingDeleteGroup = group },
-                        )
-                    }
-                    items(group.entries, key = { it.sentence.sessionId + "|" + it.sentence.segmentId }) { entry ->
-                        HistoryEntryCard(entry, onDelete = {
-                            vm.deleteSegment(entry.sentence.sessionId, entry.sentence.segmentId)
-                        })
-                    }
+                items(
+                    openGroup.entries,
+                    key = { it.sentence.sessionId + "|" + it.sentence.segmentId },
+                ) { entry ->
+                    HistoryEntryCard(entry, onDelete = {
+                        vm.deleteSegment(entry.sentence.sessionId, entry.sentence.segmentId)
+                    })
                 }
             }
         }
@@ -156,7 +195,12 @@ fun HistoryScreen(vm: HistoryViewModel) {
                 TextButton(onClick = {
                     vm.deleteGroup(group)
                     pendingDeleteGroup = null
-                }) { Text(stringResource(R.string.action_delete)) }
+                }) {
+                    Text(
+                        stringResource(R.string.action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteGroup = null }) { Text(stringResource(R.string.action_cancel)) }
@@ -173,31 +217,6 @@ fun HistoryScreen(vm: HistoryViewModel) {
                 pendingRename = null
             },
         )
-    }
-}
-
-@Composable
-private fun GroupHeader(
-    name: String,
-    count: Int,
-    onRename: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-            Text(
-                stringResource(R.string.history_group_count, count),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TextButton(onClick = onRename) { Text(stringResource(R.string.history_rename)) }
-        TextButton(onClick = onDelete) { Text(stringResource(R.string.history_delete_group)) }
     }
 }
 
@@ -227,16 +246,16 @@ private fun RenameDialog(
     )
 }
 
-/** 单句卡片（2026-09-23 用户决定：与设置页同款卡片封装） */
+/** 单句卡片（apple-design：无描边无投影，删除为破坏性红字） */
 @Composable
 private fun HistoryEntryCard(entry: SentenceWithResults, onDelete: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,7 +267,12 @@ private fun HistoryEntryCard(entry: SentenceWithResults, onDelete: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = onDelete) { Text(stringResource(R.string.history_delete_entry)) }
+                TextButton(onClick = onDelete) {
+                    Text(
+                        stringResource(R.string.history_delete_entry),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             entry.results.forEach { result ->
                 Text(

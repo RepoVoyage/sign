@@ -2,6 +2,9 @@ package com.repovoyage.sign.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -9,93 +12,94 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 语桥主题（品牌：logo 蓝青渐变手语声波 #1666D6 / #17D1E8 / 底 #F6F8FB）。
- * 设计方向：Swiss 极简 + 信任感（skill design-system 匹配），色板按用户
- * 品牌覆盖；关键文本对比度已校验（light ≥4.6:1，dark ≥10:1）。
- * 浅色 primary 用加深蓝 #1259C0（6.14:1），深色 primary 用亮青 #4FD8EE
- * （10.8:1）；logo 原蓝/青保留在容器色与渐变点缀中。
+ * 语桥主题（apple-design 重构，2026-09-24）：iOS HIG 质感。
+ * 分层逻辑：浅 = 灰底 #F2F2F7 + 白卡片；深 = 纯黑底 + #1C1C1E 卡片——
+ * 卡片永远比背景亮，靠灰阶差分层，不用描边/投影（卡片侧 elevation 0）。
+ * tint 用 Apple systemBlue（#007AFF 加深至 #0066D6 保 AA 4.9:1）；
+ * 警示橙/错误红同为系统色加深版；开关绿独立于 tint（见 [appleSwitchColors]）。
  */
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF1259C0),
+    primary = Color(0xFF0066D6),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD9E6FF),
-    onPrimaryContainer = Color(0xFF001B3F),
+    primaryContainer = Color(0xFFD9EBFF),
+    onPrimaryContainer = Color(0xFF00264F),
     secondary = Color(0xFF0E7C8C),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFC4F0F6),
-    onSecondaryContainer = Color(0xFF001F24),
-    tertiary = Color(0xFF44576E),
+    secondaryContainer = Color(0xFFD9EBFF),
+    onSecondaryContainer = Color(0xFF0055B8),
+    tertiary = Color(0xFFB25000),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFD6E3F5),
-    onTertiaryContainer = Color(0xFF0E1725),
-    error = Color(0xFFBA1A1A),
+    tertiaryContainer = Color(0xFFFFE9DC),
+    onTertiaryContainer = Color(0xFF4A1F00),
+    error = Color(0xFFD70015),
     onError = Color.White,
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF410002),
-    background = Color(0xFFF6F8FB),
-    onBackground = Color(0xFF101826),
-    surface = Color(0xFFF6F8FB),
-    onSurface = Color(0xFF101826),
-    surfaceVariant = Color(0xFFE1E6EE),
-    onSurfaceVariant = Color(0xFF444B57),
-    surfaceTint = Color(0xFF1259C0),
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFFBFCFE),
-    surfaceContainer = Color(0xFFF0F3F8),
-    surfaceContainerHigh = Color(0xFFEAEFF5),
-    surfaceContainerHighest = Color(0xFFE4E9F0),
-    outline = Color(0xFF747B87),
-    outlineVariant = Color(0xFFC4CAD4),
+    background = Color(0xFFF2F2F7),
+    onBackground = Color(0xFF1C1C1E),
+    surface = Color(0xFFF2F2F7),
+    onSurface = Color(0xFF1C1C1E),
+    surfaceVariant = Color(0xFFE9E9EE),
+    onSurfaceVariant = Color(0xFF6E6E73),
+    surfaceTint = Color(0xFF0066D6),
+    surfaceContainerLowest = Color.White,      // iOS 分组卡片
+    surfaceContainerLow = Color(0xFFFBFBFD),
+    surfaceContainer = Color(0xFFF7F7FA),
+    surfaceContainerHigh = Color(0xFFF0F0F5),  // 弹窗
+    surfaceContainerHighest = Color(0xFFE9E9EE),
+    outline = Color(0xFF8E8E93),
+    outlineVariant = Color(0xFFE3E3E8),        // 发丝分隔线
     scrim = Color.Black,
-    inverseSurface = Color(0xFF2C313A),
-    inverseOnSurface = Color(0xFFF0F2F6),
-    inversePrimary = Color(0xFFAFC6FF),
+    inverseSurface = Color(0xFF1C1C1E),
+    inverseOnSurface = Color(0xFFF2F2F7),
+    inversePrimary = Color(0xFF0A84FF),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF4FD8EE),
-    onPrimary = Color(0xFF00363E),
-    primaryContainer = Color(0xFF004E5A),
-    onPrimaryContainer = Color(0xFF9CF0FF),
-    secondary = Color(0xFF7FD4E2),
-    onSecondary = Color(0xFF00363D),
-    secondaryContainer = Color(0xFF004F58),
-    onSecondaryContainer = Color(0xFFC4F0F6),
-    tertiary = Color(0xFFBFC8DC),
-    onTertiary = Color(0xFF2A3140),
-    tertiaryContainer = Color(0xFF3F4859),
-    onTertiaryContainer = Color(0xFFDCE4F8),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF0E1520),
-    onBackground = Color(0xFFE3E8F0),
-    surface = Color(0xFF0E1520),
-    onSurface = Color(0xFFE3E8F0),
-    surfaceVariant = Color(0xFF404857),
-    onSurfaceVariant = Color(0xFFBFC8DC),
-    surfaceTint = Color(0xFF4FD8EE),
-    surfaceContainerLowest = Color(0xFF090F19),
-    surfaceContainerLow = Color(0xFF111925),
-    surfaceContainer = Color(0xFF151D2A),
-    surfaceContainerHigh = Color(0xFF1F2836),
-    surfaceContainerHighest = Color(0xFF293241),
-    outline = Color(0xFF8A919E),
-    outlineVariant = Color(0xFF404857),
+    primary = Color(0xFF0A84FF),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF003A75),
+    onPrimaryContainer = Color(0xFFD9EBFF),
+    secondary = Color(0xFF40C8E0),
+    onSecondary = Color(0xFF00282E),
+    secondaryContainer = Color(0xFF18314B),
+    onSecondaryContainer = Color(0xFF7FBFFF),
+    tertiary = Color(0xFFFF9F0A),
+    onTertiary = Color(0xFF3A1F00),
+    tertiaryContainer = Color(0xFF4A3000),
+    onTertiaryContainer = Color(0xFFFFE1B3),
+    error = Color(0xFFFF453A),
+    onError = Color.White,
+    errorContainer = Color(0xFF680E08),
+    onErrorContainer = Color(0xFFFFD6D1),
+    background = Color.Black,
+    onBackground = Color(0xFFF2F2F7),
+    surface = Color.Black,
+    onSurface = Color(0xFFF2F2F7),
+    surfaceVariant = Color(0xFF3A3A3C),
+    onSurfaceVariant = Color(0xFF98989D),
+    surfaceTint = Color(0xFF0A84FF),
+    surfaceContainerLowest = Color(0xFF1C1C1E),  // iOS 深色分组卡片（比黑底亮）
+    surfaceContainerLow = Color(0xFF232327),
+    surfaceContainer = Color(0xFF28282C),
+    surfaceContainerHigh = Color(0xFF2C2C2E),    // 弹窗
+    surfaceContainerHighest = Color(0xFF3A3A3C),
+    outline = Color(0xFF636366),
+    outlineVariant = Color(0xFF38383C),
     scrim = Color.Black,
-    inverseSurface = Color(0xFFE3E8F0),
-    inverseOnSurface = Color(0xFF2C313A),
-    inversePrimary = Color(0xFF1259C0),
+    inverseSurface = Color(0xFFF2F2F7),
+    inverseOnSurface = Color(0xFF1C1C1E),
+    inversePrimary = Color(0xFF0066D6),
 )
 
 /**
- * 字幕优先的排版（frontend-design 重构）：字幕是 hero——22sp/30sp + 0.3sp
- * 字距（远距离可读）；草稿/历史 18sp；chrome 标签 12sp 起（≥12sp 红线）。
- * CJK 不 bundling 显示字体（包体），刻意以尺度/字重对比承载个性。
+ * 字幕优先的排版（字幕是 hero：22sp/30sp + 0.3sp 字距，远距离可读）。
+ * chrome 按 SF Pro 尺度：Body 17 / Subheadline 15 / Footnote 13 / Caption 12
+ *（≥12sp 红线保留）；CJK 不 bundling 显示字体（包体），以尺度/字重对比承载个性。
  */
 object YuqiaoType {
     val subtitle = TextStyle(
@@ -114,17 +118,41 @@ object YuqiaoType {
 
 private val YuqiaoTypography = Typography().run {
     copy(
-        bodyLarge = bodyLarge.copy(fontSize = 16.sp, lineHeight = 26.sp),
-        bodyMedium = bodyMedium.copy(lineHeight = 22.sp),
-        labelSmall = labelSmall.copy(fontSize = 12.sp),
+        titleLarge = titleLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = titleMedium.copy(
+            fontSize = 17.sp,
+            lineHeight = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+        ),
+        titleSmall = titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium),
+        bodyLarge = bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp),
+        bodyMedium = bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp),
+        bodySmall = bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
+        labelMedium = labelMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+        labelSmall = labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
     )
 }
+
+/** iOS 圆角：卡片 12（medium）、输入框 10（extraSmall）、弹窗 14（extraLarge） */
+private val YuqiaoShapes = Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+)
+
+/** iOS 开关绿（HIG：开关开态独立于 tint；浅 #34C759 / 深 #30D158） */
+@Composable
+fun appleSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedTrackColor = if (isSystemInDarkTheme()) Color(0xFF30D158) else Color(0xFF34C759),
+    checkedThumbColor = Color.White,
+)
 
 @Composable
 fun SignTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
         typography = YuqiaoTypography,
+        shapes = YuqiaoShapes,
         content = content,
     )
 }

@@ -1,7 +1,7 @@
 package com.repovoyage.sign.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,14 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,7 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -49,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.repovoyage.sign.R
 import com.repovoyage.sign.camera.SessionState
-import com.repovoyage.sign.camera.sessionStateText
 import com.repovoyage.sign.language.OutputStatus
 import com.repovoyage.sign.pipeline.PipelinePhase
 import com.repovoyage.sign.pipeline.SubtitleLine
@@ -57,27 +50,18 @@ import com.repovoyage.sign.sentence.LangCode
 import kotlinx.coroutines.delay
 
 /**
- * 主界面（§2.7，frontend-design 二遍法重构）：字幕流是 hero——最大字号、
- * 时间轨状态色条编码序列与状态；chrome 退为发丝线平面层；唯一圆角留给
- * 交互 pill。会话控制台 → 翻译控制 → 字幕流 → 训练采集入口。
+ * 主界面 = 纯字幕页（§2.7，apple-design 2026-09-24）：字幕流占满；配对状态
+ * 精简为一行三档语义（未连接/连接中/已连接 + 重连与失败可行动提示，中间
+ * 技术态不披露）；扫描设备收进顶栏右上角下拉（MainActivity）。
  */
 @Composable
-fun MainScreen(
-    vm: MainViewModel,
-    hasPermissions: Boolean,
-    onRequestPermissions: () -> Unit,
-) {
+fun MainScreen(vm: MainViewModel) {
     val pipeline by vm.pipelineState.collectAsStateWithLifecycle()
     val sessionState by vm.sessionState.collectAsStateWithLifecycle()
     val sessionEvent by vm.sessionEvent.collectAsStateWithLifecycle()
-    val statsText by vm.statsText.collectAsStateWithLifecycle()
-    val scanStatus by vm.scanStatus.collectAsStateWithLifecycle()
-    val devices by vm.devices.collectAsStateWithLifecycle()
-    val selectedModelName by vm.selectedModelName.collectAsStateWithLifecycle()
     val voiceUnready by vm.voiceUnreadySpoken.collectAsStateWithLifecycle()
     val repeatCount by vm.repeatPromptCount.collectAsStateWithLifecycle()
     val recognitionAvailable by vm.recognitionAvailable.collectAsStateWithLifecycle()
-    val sourceDescription by vm.sourceDescription.collectAsStateWithLifecycle()
     val clipMode by vm.clipMode.collectAsStateWithLifecycle()
     val clipStatus by vm.clipStatus.collectAsStateWithLifecycle()
 
@@ -91,174 +75,56 @@ fun MainScreen(
         }
     }
 
-    // 设备列表可收起（2026-09-23 用户决定）：取流成功后自动收起，把空间留给字幕
-    var devicesExpanded by remember { mutableStateOf(true) }
-    LaunchedEffect(sessionState) {
-        if (sessionState is SessionState.Streaming) devicesExpanded = false
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
-        // ------------------------------------------------ 会话控制台（卡片封装）
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(
-                Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (sessionState is SessionState.Streaming) {
-                        Box(
-                            Modifier.size(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondary),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(
-                        sessionStateText(sessionState),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    sessionEvent?.let {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 10.dp).weight(1f),
-                        )
-                    }
-                }
-                if (statsText.isNotEmpty()) {
-                    Text(
-                        statsText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { if (hasPermissions) vm.startScan() else onRequestPermissions() },
-                    ) { Text(stringResource(R.string.scan_button)) }
-                    if (sessionState !is SessionState.Idle) {
-                        FilledTonalButton(onClick = vm::stopSession) {
-                            Text(stringResource(R.string.stop_button))
-                        }
-                    }
-                }
-                if (scanStatus.isNotEmpty()) {
-                    Text(
-                        scanStatus,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (devices.isNotEmpty()) {
-                    // 可收起的设备列表（2026-09-23 用户决定）：收起后只留一行开关
-                    TextButton(onClick = { devicesExpanded = !devicesExpanded }) {
-                        Text(
-                            if (devicesExpanded) stringResource(R.string.devices_collapse)
-                            else stringResource(R.string.devices_expand, devices.size),
-                        )
-                        Icon(
-                            painterResource(
-                                if (devicesExpanded) R.drawable.ic_expand_less
-                                else R.drawable.ic_expand_more,
-                            ),
-                            contentDescription = null,   // 旁有可见文字，纯装饰
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    if (devicesExpanded) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            devices.forEachIndexed { index, device ->
-                                FilterChip(
-                                    selected = false,
-                                    onClick = { vm.connect(device) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = {
-                                        Text(
-                                            vm.deviceLabel(device, index),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        // ------------------------------------------------ 配对状态行（三档语义）
+        SessionStatusRow(sessionState, sessionEvent, clipStatus)
 
-        // ------------------------------------------------ 翻译控制 + 状态行
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (pipeline.phase == PipelinePhase.RUNNING) {
-                    FilledTonalButton(onClick = vm::stopTranslation) {
-                        Text(stringResource(R.string.translation_stop))
-                    }
-                    // 切片识别（模型 B）：词边界=固定窗口，句边界=用户显式动作
-                    if (clipMode) {
-                        FilledTonalButton(onClick = vm::finishSentence) {
-                            Text(stringResource(R.string.finish_sentence))
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = vm::startTranslation,
-                        enabled = recognitionAvailable,
-                    ) { Text(stringResource(R.string.translation_start)) }
+        // ------------------------------------------------ 翻译控制行
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (pipeline.phase == PipelinePhase.RUNNING) {
+                FilledTonalButton(onClick = vm::stopTranslation) {
+                    Text(stringResource(R.string.translation_stop))
                 }
-                if (pipeline.phase == PipelinePhase.SOURCE_UNAVAILABLE) {
-                    Text(
-                        stringResource(R.string.translation_source_unavailable),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                // 切片识别（模型 B）：词边界=固定窗口，句边界=用户显式动作
+                if (clipMode) {
+                    FilledTonalButton(onClick = vm::finishSentence) {
+                        Text(stringResource(R.string.finish_sentence))
+                    }
                 }
+            } else {
+                Button(
+                    onClick = vm::startTranslation,
+                    enabled = recognitionAvailable,
+                ) { Text(stringResource(R.string.translation_start)) }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "$sourceDescription｜当前模型：$selectedModelName",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            clipStatus?.let {
+            if (pipeline.phase == PipelinePhase.SOURCE_UNAVAILABLE) {
                 Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
+                    stringResource(R.string.translation_source_unavailable),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
-            if (showRepeat) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.tertiary),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.repeat_prompt),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
+        }
+        if (showRepeat) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.tertiary),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.repeat_prompt),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
             }
         }
 
@@ -269,8 +135,11 @@ fun MainScreen(
             pendingConfirm = pipeline.pendingConfirm,
             voiceUnready = voiceUnready,
             emptyHint = stringResource(
-                if (pipeline.phase == PipelinePhase.RUNNING) R.string.subtitle_empty_running
-                else R.string.subtitle_empty_idle,
+                when {
+                    sessionState !is SessionState.Streaming -> R.string.subtitle_empty_disconnected
+                    pipeline.phase == PipelinePhase.RUNNING -> R.string.subtitle_empty_running
+                    else -> R.string.subtitle_empty_idle
+                },
             ),
             onDiscard = vm::discardPending,
             onReplay = vm::replay,
@@ -280,7 +149,6 @@ fun MainScreen(
 
         // ------------------------------------------------ 训练采集入口
         if (vm.captureEntry.isAvailable) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
                 Modifier.fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -292,6 +160,71 @@ fun MainScreen(
                     Text(stringResource(R.string.capture_stop_button))
                 }
             }
+        }
+    }
+}
+
+/**
+ * 配对状态一行化（2026-09-24 用户决定）：技术中间态（BLE/Wi-Fi/授权/激活…）
+ * 不披露，只给三档可行动语义；重连单独显示（用户需知道是否要手动干预）；
+ * 会话事件（低电/过热/断连）保留为第二行小字。
+ */
+@Composable
+private fun SessionStatusRow(
+    sessionState: SessionState,
+    sessionEvent: String?,
+    clipStatus: String?,
+) {
+    val connectedGreen = if (isSystemInDarkTheme()) Color(0xFF30D158) else Color(0xFF34C759)
+    val (dotColor, statusText) = when (sessionState) {
+        is SessionState.Streaming ->
+            connectedGreen to stringResource(R.string.status_connected)
+        is SessionState.Reconnecting ->
+            MaterialTheme.colorScheme.tertiary to
+                stringResource(R.string.status_reconnecting, sessionState.attempt)
+        is SessionState.Error ->
+            MaterialTheme.colorScheme.error to stringResource(R.string.status_failed)
+        SessionState.PausedHot ->
+            MaterialTheme.colorScheme.tertiary to stringResource(R.string.status_paused_hot)
+        SessionState.Idle ->
+            MaterialTheme.colorScheme.onSurfaceVariant to stringResource(R.string.status_disconnected)
+        else ->
+            MaterialTheme.colorScheme.primary to stringResource(R.string.status_connecting)
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(dotColor),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                statusText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            clipStatus?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 10.dp).weight(1f, fill = false),
+                )
+            }
+        }
+        if (sessionEvent != null) {
+            Text(
+                sessionEvent,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+            )
         }
     }
 }
@@ -363,7 +296,7 @@ private fun SubtitleArea(
 /** 时间轨行：3dp 状态色条（结构信息：序列+状态）+ 内容列 */
 @Composable
 private fun TimelineRow(
-    barColor: androidx.compose.ui.graphics.Color,
+    barColor: Color,
     content: @Composable () -> Unit,
 ) {
     Row(
@@ -399,14 +332,7 @@ private fun SubtitleLineRow(
         else MaterialTheme.colorScheme.outlineVariant,
     ) {
         Text(line.rawChinese, style = YuqiaoType.subtitle, fontWeight = FontWeight.SemiBold)
-        if (line.results.isEmpty()) {
-            Text(
-                stringResource(R.string.draft_prefix),
-                style = MaterialTheme.typography.bodySmall,
-                fontStyle = FontStyle.Italic,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // 无语言结果是常态（LLM 模块已砍）：不再显示"正在识别…"占位
         line.results.forEach { (language, result) ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
