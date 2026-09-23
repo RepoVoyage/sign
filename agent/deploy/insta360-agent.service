@@ -1,0 +1,23 @@
+[Unit]
+Description=Insta360 Language Processing API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ecs-user
+Group=ecs-user
+WorkingDirectory=/opt/insta360-agent
+ExecStart=/opt/insta360-agent/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

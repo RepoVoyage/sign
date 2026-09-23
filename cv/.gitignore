@@ -1,0 +1,6 @@
+.venv/
+models/*
+!models/.gitkeep
+data/*
+!data/manifest.example.csv
+outputs/*
