@@ -1,0 +1,4 @@
+video,label,signer,session,split
+videos/help_01.mp4,请帮助我,p01,s01,train
+videos/help_02.mp4,请帮助我,p01,s02,val
+videos/help_03.mp4,请帮助我,p01,s03,test

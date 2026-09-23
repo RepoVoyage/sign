@@ -1,6 +1,6 @@
 # 随心说 Python Agent
 
-接收 FINAL 冻结原文，调用实际 LLM 整理中文并按需翻译。接口：`POST /v1/polish`。固定模拟语句、模拟模式与代码中的示例输出已删除；测试替身仅存在于 `tests/`。
+提供两个语言处理接口：`POST /v1/polish` 接收 FINAL 冻结原文，调用实际 LLM 整理中文并按需翻译；`POST /v1/compose-signs` 接收按时间排列的手语词候选，只在演示用的五句中补全。后者的五句是明确限定的产品语料，不是模拟模型返回；测试替身仅存在于 `tests/`。
 
 ## 线上访问
 
@@ -10,7 +10,7 @@
 
 接口要求 `Authorization: Bearer <SERVICE_API_KEY>`。令牌已写入本机 `agent/.env`，与服务器一致，不是 `LLM_API_KEY`。Apifox 选择 Bearer Token 并粘贴 SERVICE_API_KEY 的值；Swagger 点击 Authorize 后输入令牌。
 
-详细字段见 [接口文档](docs/API.md)，部署和维护见 [部署说明](docs/DEPLOYMENT.md)。
+详细字段见 [接口文档](docs/API.md)，部署和维护见 [部署说明](docs/DEPLOYMENT.md)。当前公网部署可能仍为旧版本；调用新接口前需先更新服务器，并检查公网 OpenAPI 是否包含 `/v1/compose-signs`。
 
 ## 本地运行
 

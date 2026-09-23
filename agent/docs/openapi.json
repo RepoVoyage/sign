@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "随心说 Language Processing API",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "paths": {
     "/health": {
@@ -65,6 +65,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PolishResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        }
+      }
+    },
+    "/v1/compose-signs": {
+      "post": {
+        "summary": "Compose Signs Endpoint",
+        "operationId": "compose_signs_endpoint_v1_compose_signs_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-remaining-budget-ms",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 1,
+              "description": "客户端剩余处理预算，单位毫秒；云端调用最多 10 秒。",
+              "default": 10000,
+              "title": "X-Remaining-Budget-Ms"
+            },
+            "description": "客户端剩余处理预算，单位毫秒；云端调用最多 10 秒。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignComposeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignComposeResponse"
                 }
               }
             }
@@ -384,6 +493,187 @@
           "revision"
         ],
         "title": "PolishResponse"
+      },
+      "SignCandidate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "enum": [
+              "一定",
+              "你",
+              "只",
+              "可以",
+              "回",
+              "大家",
+              "好",
+              "家",
+              "年",
+              "很久不",
+              "我",
+              "我们",
+              "新",
+              "是",
+              "照顾",
+              "祝贺",
+              "自己",
+              "要",
+              "见"
+            ],
+            "title": "Label"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "未校准的 CV softmax 分数，不是可靠概率"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "SignCandidate"
+      },
+      "SignComposeRequest": {
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Sessionid"
+          },
+          "segmentId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Segmentid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "gestures": {
+            "items": {
+              "$ref": "#/components/schemas/SignGesture"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Gestures"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sessionId",
+          "segmentId",
+          "revision",
+          "gestures"
+        ],
+        "title": "SignComposeRequest"
+      },
+      "SignComposeResponse": {
+        "properties": {
+          "segmentId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Segmentid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "我想回家",
+                  "你一定可以",
+                  "你要照顾好自己",
+                  "祝大家新年好",
+                  "我们只是好久不见"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "alternatives": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "我想回家",
+                "你一定可以",
+                "你要照顾好自己",
+                "祝大家新年好",
+                "我们只是好久不见"
+              ]
+            },
+            "type": "array",
+            "title": "Alternatives"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CANDIDATE",
+              "AMBIGUOUS",
+              "INSUFFICIENT_EVIDENCE"
+            ],
+            "title": "Status"
+          },
+          "needsConfirmation": {
+            "type": "boolean",
+            "const": true,
+            "title": "Needsconfirmation",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segmentId",
+          "revision",
+          "sentence",
+          "alternatives",
+          "status"
+        ],
+        "title": "SignComposeResponse"
+      },
+      "SignGesture": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SignCandidate"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidates"
+        ],
+        "title": "SignGesture"
       }
     },
     "securitySchemes": {

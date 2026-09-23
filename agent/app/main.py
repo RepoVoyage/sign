@@ -9,8 +9,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import Settings
-from .schemas import ErrorResponse, ErrorDetail, HealthResponse, PolishRequest, PolishResponse
+from .schemas import (ErrorResponse, ErrorDetail, HealthResponse, PolishRequest, PolishResponse,
+                      SignComposeRequest, SignComposeResponse)
 from .service import ServiceError, polish
+from .sign_compose import compose_signs
 
 
 def error_response(status, code, message, retryable, segment_id=None, revision=None):
@@ -28,7 +30,7 @@ def create_app(settings: Settings | None = None, transport=None) -> FastAPI:
             app.state.client = client
             yield
 
-    app = FastAPI(title='随心说 Language Processing API', version='2.0.0', lifespan=lifespan)
+    app = FastAPI(title='随心说 Language Processing API', version='2.1.0', lifespan=lifespan)
     bearer = HTTPBearer(auto_error=False)
 
     async def authorize(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
@@ -67,6 +69,23 @@ def create_app(settings: Settings | None = None, transport=None) -> FastAPI:
             return error_response(exc.http_status, exc.code, exc.message, exc.retryable,
                                   body.segmentId, body.revision)
         return PolishResponse(segmentId=body.segmentId, revision=body.revision, **result.model_dump())
+
+    @app.post('/v1/compose-signs', response_model=SignComposeResponse, dependencies=[Depends(authorize)],
+              responses={code: {'model': ErrorResponse} for code in (401, 422, 500, 502, 503, 504)})
+    async def compose_signs_endpoint(
+        body: SignComposeRequest, request: Request,
+        x_remaining_budget_ms: Annotated[int, Header(ge=1, le=10000,
+            description='客户端剩余处理预算，单位毫秒；云端调用最多 10 秒。')] = 10000,
+    ):
+        try:
+            sentence, alternatives, status = await compose_signs(
+                body, config, request.app.state.client,
+                min(config.timeout_seconds, x_remaining_budget_ms / 1000, 10))
+        except ServiceError as exc:
+            return error_response(exc.http_status, exc.code, exc.message, exc.retryable,
+                                  body.segmentId, body.revision)
+        return SignComposeResponse(segmentId=body.segmentId, revision=body.revision,
+                                   sentence=sentence, alternatives=alternatives, status=status)
 
     return app
 

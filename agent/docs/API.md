@@ -1,4 +1,50 @@
-# 随心说 Python 云端语言接口（实现版 v2）
+# 随心说 Python 云端语言接口（实现版 v2.1）
+
+## 0. 五句手语演示接口：POST /v1/compose-signs
+
+此接口接收 App 已切好的**一个句子段**内的有序手势结果。每段手势可提交 CV 的前 1–3 个词候选，按排名排列；`score` 可省略，即使提供也是未校准 softmax，不能当正确概率。服务只会从以下五句中选择，或返回 null：
+
+1. 我想回家
+2. 你一定可以
+3. 你要照顾好自己
+4. 祝大家新年好
+5. 我们只是好久不见
+
+这里的“想”不是 CV 词类，而是被授权在固定句式中补出；CV 标签“祝贺”对应目标句的“祝”，“很久不”对应“好久不”。不允许生成其他句子。当前 CV 模型仍是 19 个**孤立词**分类器，App 必须切好每个词和句子段；此接口不接收视频、不做手势分段。
+
+请求头与 `/v1/polish` 相同：`Authorization: Bearer <SERVICE_API_KEY>`、`Content-Type: application/json`；可选 `X-Remaining-Budget-Ms` 为 1–10000，云端模型调用最多 10 秒。
+
+```json
+{
+  "sessionId": "12345678-1234-1234-1234-123456789abc",
+  "segmentId": "seg-sign-1",
+  "revision": 1,
+  "gestures": [
+    {"candidates": [{"label": "我", "score": 0.82}, {"label": "我们", "score": 0.12}]},
+    {"candidates": [{"label": "回", "score": 0.71}]},
+    {"candidates": [{"label": "家", "score": 0.63}]}
+  ]
+}
+```
+
+`sessionId` 为 UUID；`segmentId` 非空、1–128 字符；`revision` 为 0–2147483647 的整数。`gestures` 为按时间排列的 1–12 项；每项 `candidates` 为按 CV 排名排列的 1–3 项，词标签不能重复，必须属于当前 19 类。`score` 可选，若提供须在 0–1 内。未约定字段和不合法数据返回 422。新段使用新 `segmentId`；同段修改则增加 `revision`。
+
+成功响应示例：
+
+```json
+{
+  "segmentId": "seg-sign-1",
+  "revision": 1,
+  "sentence": "我想回家",
+  "alternatives": ["我想回家"],
+  "status": "CANDIDATE",
+  "needsConfirmation": true
+}
+```
+
+`status` 为 `CANDIDATE`、`AMBIGUOUS` 或 `INSUFFICIENT_EVIDENCE`。后两者的 `sentence` 为 null；`alternatives` 是按至少两个有序词候选及区分词筛出的可选句，不保证正确。证据不足时不调用 LLM。LLM 只能从 `alternatives` 选择或返回 null；越界输出返回 502 `MODEL_INVALID_RESPONSE`。所有结果 `needsConfirmation=true`，App 应展示给用户确认，不能直接自动播报。当前模型对胸前视角的同场次抽查为 13/19，且缺少非目标动作拒识；五句组合效果尚未独立验证。
+
+错误体结构、鉴权、超时和模型错误码与 `/v1/polish` 相同。接口本身不保存会话；App 负责视频分段、候选排序、代次失效、去重、结果确认和 TTS。此版本先完成本地实现，公网服务是否已更新须以线上 OpenAPI 实查为准。
 
 以用户提供的 `API_new.md` §5–6 为依据。本文件补齐 Python HTTP 的可执行约定，不替代全系统契约；原始 `API_new.md` 保持不变。该文档引用的 `ARCHITECTURE.md` 当前未在仓库中找到，若之后提供，需进一步核对冲突。
 

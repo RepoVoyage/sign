@@ -1,10 +1,11 @@
 # 随心说 / Sign
 
-手语识别结果的语句整理与翻译项目。当前仓库包含 Python Agent、接口契约、部署配置和数据整理脚本；CV 模型与 Android App 由对应模块另行接入。
+手语识别结果的语句整理与翻译项目。当前仓库包含 Python Agent、接口契约、部署配置、数据整理脚本和 CV 原型；Android App 待接入。
 
 ## 目录
 
 - `agent/`：Python HTTP 服务、测试、生产部署配置。
+- `cv/`：MediaPipe 双手关键点提取、19 词 TCN 分类和短视频 HTTP 测试服务。见 [CV 使用说明](cv/README.md)；目前只识别孤立词。
 - `agent/docs/接口调用说明.md`：App / Apifox 请求、响应和认证说明。
 - `docs/`：项目调研文档。
 - `datasets/`：数据来源说明和整理脚本。
@@ -25,6 +26,8 @@ cp .env.example .env
 ```
 
 具体使用见 [Agent 说明](agent/README.md) 和 [接口调用说明](agent/docs/接口调用说明.md)。真实密钥不随仓库发布，请向维护者获取服务访问令牌。
+
+当前演示链路：GO 3S → App 切出单词短视频 → CV `/v1/recognize` 返回每词最多三个候选 → Agent `/v1/compose-signs` 从五句固定语料中选择一句 → App 展示给用户确认。App 的视频切词/切句和端到端集成仍待完成；CV 分数未校准，不可直接据此自动播报。
 
 ## 数据范围
 
