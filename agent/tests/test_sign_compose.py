@@ -39,6 +39,8 @@ def test_five_demo_sentences(words, sentence):
     def handler(request):
         payload = json.loads(request.content)
         assert payload['model'] == 'test-model'
+        assert payload['enable_thinking'] is False
+        assert payload['max_tokens'] == 64
         user = json.loads(payload['messages'][1]['content'])
         assert sentence in user['allowedSentences']
         assert len(user['gestures']) == len(words)
