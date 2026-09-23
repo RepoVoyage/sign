@@ -1,0 +1,203 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "682ca229767be54cec803cdaa6d71692",
+    "entities": [
+      {
+        "tableName": "sentences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `segmentId` TEXT NOT NULL, `streamGeneration` INTEGER NOT NULL, `sequenceEpoch` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `startPtsUs` INTEGER NOT NULL, `endPtsUs` INTEGER NOT NULL, `wallTimeStart` INTEGER NOT NULL, `wallTimeEnd` INTEGER NOT NULL, `rawChinese` TEXT NOT NULL, `confidence` REAL, `userConfirmed` INTEGER NOT NULL, `modelVersion` TEXT NOT NULL, `specChecksum` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `segmentId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamGeneration",
+            "columnName": "streamGeneration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequenceEpoch",
+            "columnName": "sequenceEpoch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startPtsUs",
+            "columnName": "startPtsUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endPtsUs",
+            "columnName": "endPtsUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallTimeStart",
+            "columnName": "wallTimeStart",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallTimeEnd",
+            "columnName": "wallTimeEnd",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawChinese",
+            "columnName": "rawChinese",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "userConfirmed",
+            "columnName": "userConfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelVersion",
+            "columnName": "modelVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "specChecksum",
+            "columnName": "specChecksum",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "segmentId"
+          ]
+        }
+      },
+      {
+        "tableName": "language_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `segmentId` TEXT NOT NULL, `language` TEXT NOT NULL, `sentenceRevision` INTEGER NOT NULL, `settingsRevision` INTEGER NOT NULL, `text` TEXT, `status` TEXT NOT NULL, `source` TEXT NOT NULL, `processedAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `segmentId`, `language`), FOREIGN KEY(`sessionId`, `segmentId`) REFERENCES `sentences`(`sessionId`, `segmentId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segmentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sentenceRevision",
+            "columnName": "sentenceRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "settingsRevision",
+            "columnName": "settingsRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedAtWallMs",
+            "columnName": "processedAtWallMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "segmentId",
+            "language"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_language_results_sessionId_segmentId",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "segmentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_language_results_sessionId_segmentId` ON `${TABLE_NAME}` (`sessionId`, `segmentId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sentences",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId",
+              "segmentId"
+            ],
+            "referencedColumns": [
+              "sessionId",
+              "segmentId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '682ca229767be54cec803cdaa6d71692')"
+    ]
+  }
+}

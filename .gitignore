@@ -1,20 +1,26 @@
-.DS_Store
-.env
-.env.*
-!.env.example
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
+# ---- IDE ----
 .idea/
-/tmp/
-/output/
-# Downloaded third-party data and generated galleries stay local.
-/datasets/chinese-sign-language-dictionary/
-/datasets/csl-clinic-sample/
-/datasets/demo_help_vocab/images/
-/datasets/demo_help_vocab/*.html
-/datasets/demo_help_vocab/manifest.json
-/datasets/demo_help_vocab/词汇图文索引.md
-*.pem
-*.key
+*.iml
+
+# ---- Insta360 官方 SDK 及文档（第三方专有/体积大，仓库公开故不入库）----
+reference/
+
+# ---- 日志 ----
+*.log
+p0-gate-logcat*.txt
+
+# ---- Android 构建产物 ----
+.gradle/
+build/
+local.properties
+.cxx/
+.externalNativeBuild/
+captures/
+
+# ---- Python（PC 客户端）----
+pc/.venv/
+__pycache__/
+.pytest_cache/
+
+# ---- agent 本地密钥（不入库）----
+agent/

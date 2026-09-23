@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">语桥·训练</string>
+    <string name="capture_service_channel_name">采集服务</string>
+    <string name="capture_service_notification_title">USB 采集服务运行中</string>
+    <string name="capture_service_notification_text">采集手语训练素材，仅保存至已授权 PC（等待连接 127.0.0.1:9999）</string>
+    <string name="capture_service_token_text">配对令牌：%1$s（PC 连接时输入）</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 照 Demo 抄写（ARCHITECTURE §2.4.7 第 4 条）：明文例外只给相机本地实际
+     必要范围；云端 LLM 域名走 base-config 的 HTTPS + 正常证书校验 -->
+<network-security-config>
+    <!-- 相机固定 IP：仅放行该地址的明文 HTTP，其余域名/IP 一律要求 HTTPS -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.42.1</domain>
+        <!-- Wi-Fi Aware 场景下  -->
+        <domain includeSubdomains="false">aware.insta360.camera</domain>
+    </domain-config>
+
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

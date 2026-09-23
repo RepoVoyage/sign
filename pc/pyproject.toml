@@ -1,0 +1,13 @@
+[project]
+name = "sign-pc"
+version = "0.1.0"
+description = "CSL 训练采集 PC 客户端（API.md §9 USB 线协议 v1 接收端）"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.4"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
